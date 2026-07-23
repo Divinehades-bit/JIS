@@ -1,5 +1,9 @@
 import { create } from "zustand";
 import { fetchLatestMarketPrices } from "../services/marketDataService";
+import {
+  ensureInitialPortfolioSnapshot,
+  recordPortfolioSnapshot,
+} from "./portfolioHistoryStore";
 
 export type Position = {
   id: number;
@@ -79,7 +83,8 @@ const PORTFOLIO_STORAGE_KEY = "portfolio";
 const TRANSACTIONS_STORAGE_KEY =
   "portfolio-transactions";
 
-const FLOATING_POINT_TOLERANCE = 0.00000001;
+const FLOATING_POINT_TOLERANCE =
+  0.00000001;
 
 const defaultPositions: Position[] = [
   {
@@ -137,11 +142,9 @@ const normalizeFiniteNumber = (
       ? value
       : Number(value);
 
-  if (!Number.isFinite(parsedValue)) {
-    return null;
-  }
-
-  return parsedValue;
+  return Number.isFinite(parsedValue)
+    ? parsedValue
+    : null;
 };
 
 const normalizeIsoDate = (
@@ -350,13 +353,13 @@ const saveTransactions = (
 
 const loadPositions = (): Position[] => {
   try {
-    const savedPositions = localStorage.getItem(
-      PORTFOLIO_STORAGE_KEY,
-    );
+    const savedPositions =
+      localStorage.getItem(
+        PORTFOLIO_STORAGE_KEY,
+      );
 
     if (savedPositions === null) {
       savePositions(defaultPositions);
-
       return defaultPositions;
     }
 
@@ -365,23 +368,24 @@ const loadPositions = (): Position[] => {
 
     if (!Array.isArray(parsedPositions)) {
       savePositions(defaultPositions);
-
       return defaultPositions;
     }
 
-    const normalizedPositions = parsedPositions
-      .map(normalizePosition)
-      .filter(
-        (position): position is Position =>
-          position !== null,
-      );
+    const normalizedPositions =
+      parsedPositions
+        .map(normalizePosition)
+        .filter(
+          (
+            position,
+          ): position is Position =>
+            position !== null,
+        );
 
     if (
       parsedPositions.length > 0 &&
       normalizedPositions.length === 0
     ) {
       savePositions(defaultPositions);
-
       return defaultPositions;
     }
 
@@ -403,14 +407,16 @@ const loadPositions = (): Position[] => {
 const createOpeningTransactions = (
   positions: Position[],
 ): Transaction[] => {
-  const migrationDate = new Date().toISOString();
+  const migrationDate =
+    new Date().toISOString();
 
   return positions.map((position) => ({
     id: createTransactionId(),
     type: "opening",
     symbol: position.symbol,
     amount:
-      position.shares * position.averageCost,
+      position.shares *
+      position.averageCost,
     shares: position.shares,
     price: position.averageCost,
     date: migrationDate,
@@ -441,7 +447,6 @@ const loadTransactions = (
 
     if (!Array.isArray(parsedTransactions)) {
       saveTransactions([]);
-
       return [];
     }
 
@@ -570,6 +575,10 @@ const initialPositions = loadPositions();
 const initialTransactions =
   loadTransactions(initialPositions);
 
+ensureInitialPortfolioSnapshot(
+  initialPositions,
+);
+
 const usePortfolioStore =
   create<PortfolioStore>((set, get) => ({
     positions: initialPositions,
@@ -628,11 +637,18 @@ const usePortfolioStore =
         savePositions(nextPositions);
         saveTransactions(nextTransactions);
 
+        recordPortfolioSnapshot(
+          nextPositions,
+          "portfolio-change",
+        );
+
         return {
           positions: nextPositions,
           transactions: nextTransactions,
           lastPriceSyncAt:
-            getLatestPriceUpdate(nextPositions),
+            getLatestPriceUpdate(
+              nextPositions,
+            ),
         };
       });
     },
@@ -667,10 +683,17 @@ const usePortfolioStore =
 
         savePositions(nextPositions);
 
+        recordPortfolioSnapshot(
+          nextPositions,
+          "portfolio-change",
+        );
+
         return {
           positions: nextPositions,
           lastPriceSyncAt:
-            getLatestPriceUpdate(nextPositions),
+            getLatestPriceUpdate(
+              nextPositions,
+            ),
         };
       });
     },
@@ -684,10 +707,17 @@ const usePortfolioStore =
 
         savePositions(nextPositions);
 
+        recordPortfolioSnapshot(
+          nextPositions,
+          "portfolio-change",
+        );
+
         return {
           positions: nextPositions,
           lastPriceSyncAt:
-            getLatestPriceUpdate(nextPositions),
+            getLatestPriceUpdate(
+              nextPositions,
+            ),
         };
       });
     },
@@ -705,12 +735,18 @@ const usePortfolioStore =
           .toUpperCase();
 
         const amount =
-          normalizePositiveNumber(input.amount);
+          normalizePositiveNumber(
+            input.amount,
+          );
 
         const price =
-          normalizePositiveNumber(input.price);
+          normalizePositiveNumber(
+            input.price,
+          );
 
-        const parsedDate = new Date(input.date);
+        const parsedDate = new Date(
+          input.date,
+        );
 
         if (!symbol) {
           result = {
@@ -757,7 +793,9 @@ const usePortfolioStore =
           amount / price;
 
         if (
-          !Number.isFinite(calculatedShares) ||
+          !Number.isFinite(
+            calculatedShares,
+          ) ||
           calculatedShares <= 0
         ) {
           result = {
@@ -808,13 +846,15 @@ const usePortfolioStore =
 
         if (input.type === "buy") {
           const nextShares =
-            currentShares + calculatedShares;
+            currentShares +
+            calculatedShares;
 
           const nextInvestedCapital =
             currentInvestedCapital + amount;
 
           const nextAverageCost =
-            nextInvestedCapital / nextShares;
+            nextInvestedCapital /
+            nextShares;
 
           const nextPosition: Position = {
             id:
@@ -822,7 +862,8 @@ const usePortfolioStore =
               Date.now(),
             symbol,
             shares: nextShares,
-            averageCost: nextAverageCost,
+            averageCost:
+              nextAverageCost,
             price,
             priceUpdatedAt:
               new Date().toISOString(),
@@ -859,7 +900,8 @@ const usePortfolioStore =
           }
 
           const remainingShares =
-            currentShares - calculatedShares;
+            currentShares -
+            calculatedShares;
 
           realizedGainLoss =
             amount -
@@ -882,7 +924,8 @@ const usePortfolioStore =
                 firstPosition?.id ??
                 Date.now(),
               symbol,
-              shares: remainingShares,
+              shares:
+                remainingShares,
               averageCost:
                 currentAverageCost,
               price,
@@ -906,9 +949,11 @@ const usePortfolioStore =
           amount,
           shares: calculatedShares,
           price,
-          date: parsedDate.toISOString(),
+          date:
+            parsedDate.toISOString(),
           note:
-            input.note?.trim() || undefined,
+            input.note?.trim() ||
+            undefined,
           realizedGainLoss,
         };
 
@@ -931,15 +976,24 @@ const usePortfolioStore =
         savePositions(nextPositions);
         saveTransactions(nextTransactions);
 
+        recordPortfolioSnapshot(
+          nextPositions,
+          "transaction",
+          parsedDate.toISOString(),
+        );
+
         result = {
           success: true,
         };
 
         return {
           positions: nextPositions,
-          transactions: nextTransactions,
+          transactions:
+            nextTransactions,
           lastPriceSyncAt:
-            getLatestPriceUpdate(nextPositions),
+            getLatestPriceUpdate(
+              nextPositions,
+            ),
         };
       });
 
@@ -948,7 +1002,8 @@ const usePortfolioStore =
 
     refreshMarketPrices: async () => {
       if (
-        get().priceSyncStatus === "loading"
+        get().priceSyncStatus ===
+        "loading"
       ) {
         return {
           success: false,
@@ -995,7 +1050,9 @@ const usePortfolioStore =
 
       try {
         const response =
-          await fetchLatestMarketPrices(symbols);
+          await fetchLatestMarketPrices(
+            symbols,
+          );
 
         const updatedSymbols =
           Object.keys(response.prices);
@@ -1005,26 +1062,30 @@ const usePortfolioStore =
 
         set((state) => {
           const nextPositions =
-            state.positions.map((position) => {
-              const symbol =
-                position.symbol
-                  .trim()
-                  .toUpperCase();
+            state.positions.map(
+              (position) => {
+                const symbol =
+                  position.symbol
+                    .trim()
+                    .toUpperCase();
 
-              const latestPrice =
-                response.prices[symbol];
+                const latestPrice =
+                  response.prices[symbol];
 
-              if (latestPrice === undefined) {
-                return position;
-              }
+                if (
+                  latestPrice === undefined
+                ) {
+                  return position;
+                }
 
-              return {
-                ...position,
-                price: latestPrice,
-                priceUpdatedAt:
-                  response.updatedAt,
-              };
-            });
+                return {
+                  ...position,
+                  price: latestPrice,
+                  priceUpdatedAt:
+                    response.updatedAt,
+                };
+              },
+            );
 
           const partialError =
             failedSymbols.length > 0
@@ -1035,13 +1096,20 @@ const usePortfolioStore =
 
           savePositions(nextPositions);
 
+          recordPortfolioSnapshot(
+            nextPositions,
+            "market-sync",
+            response.updatedAt,
+          );
+
           return {
             positions: nextPositions,
             priceSyncStatus:
               partialError
                 ? "error"
                 : "success",
-            priceSyncError: partialError,
+            priceSyncError:
+              partialError,
             lastPriceSyncAt:
               response.updatedAt,
           };

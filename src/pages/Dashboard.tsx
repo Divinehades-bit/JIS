@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import PortfolioChart from "../components/dashboard/PortfolioChart";
+import PortfolioHistoryChart from "../components/dashboard/PortfolioHistoryChart";
 import RecentActivity from "../components/dashboard/RecentActivity";
 import StatsGrid from "../components/dashboard/StatsGrid";
 import TopHoldings from "../components/dashboard/TopHoldings";
@@ -13,7 +14,8 @@ const Dashboard = () => {
   );
 
   const portfolioName = useSettingsStore(
-    (state) => state.settings.portfolioName,
+    (state) =>
+      state.settings.portfolioName,
   );
 
   return (
@@ -29,8 +31,9 @@ const Dashboard = () => {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Review portfolio value, performance,
-            allocation and recent transactions.
+            Review portfolio value,
+            performance, allocation and recent
+            transactions.
           </p>
         </div>
 
@@ -63,6 +66,8 @@ const Dashboard = () => {
 
       <StatsGrid />
 
+      <PortfolioHistoryChart />
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)]">
         <PortfolioChart />
 
@@ -78,9 +83,9 @@ const Dashboard = () => {
           </h2>
 
           <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">
-            Record your first purchase amount to activate
-            the dashboard calculations and allocation
-            chart.
+            Record your first purchase amount
+            to activate the dashboard
+            calculations and allocation chart.
           </p>
 
           <Link
