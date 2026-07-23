@@ -10,12 +10,17 @@ const Goals = () => {
         </p>
 
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-          Portfolio goal
+          Net worth goal
         </h1>
 
-        <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Define your target portfolio value and estimate
-          the monthly contribution required to reach it.
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+          Set a wealth target using
+          your complete JIS net worth:
+          investments plus cash.
+          Compare conservative, base
+          and optimistic return
+          scenarios and calculate the
+          monthly investment required.
         </p>
       </section>
 

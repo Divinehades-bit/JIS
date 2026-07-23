@@ -3,8 +3,8 @@ import {
   type ReactNode,
 } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
+import useWealthSummary from "../../hooks/useWealthSummary";
 import useGoalStore from "../../store/goalStore";
-import usePortfolioStore from "../../store/portfolioStore";
 
 type MetricCardProps = {
   label: string;
@@ -20,27 +20,57 @@ type ProjectionCheckpoint = {
   value: number;
 };
 
-const percentageFormatter = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+type ReturnScenario = {
+  id:
+    | "conservative"
+    | "base"
+    | "optimistic";
 
-const dateFormatter = new Intl.DateTimeFormat(
-  "en-US",
-  {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  },
-);
+  label: string;
 
-const monthYearFormatter = new Intl.DateTimeFormat(
-  "en-US",
-  {
-    year: "numeric",
-    month: "short",
-  },
-);
+  annualReturn: number;
+
+  projectedValue: number;
+
+  requiredContribution: number;
+
+  estimatedCompletionDate:
+    | Date
+    | null;
+
+  isOnTrack: boolean;
+};
+
+const percentageFormatter =
+  new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+
+const returnFormatter =
+  new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  });
+
+const dateFormatter =
+  new Intl.DateTimeFormat(
+    "en-US",
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
+
+const monthYearFormatter =
+  new Intl.DateTimeFormat(
+    "en-US",
+    {
+      year: "numeric",
+      month: "short",
+    },
+  );
 
 const calculateMonthsRemaining = (
   targetDateValue: string,
@@ -52,7 +82,9 @@ const calculateMonthsRemaining = (
   );
 
   if (
-    Number.isNaN(targetDate.getTime()) ||
+    Number.isNaN(
+      targetDate.getTime(),
+    ) ||
     targetDate <= today
   ) {
     return 0;
@@ -65,16 +97,33 @@ const calculateMonthsRemaining = (
     targetDate.getMonth() -
     today.getMonth();
 
-  if (targetDate.getDate() > today.getDate()) {
+  if (
+    targetDate.getDate() >
+    today.getDate()
+  ) {
     months += 1;
   }
 
   return Math.max(months, 1);
 };
 
-const calculateFutureValue = (
+const annualToMonthlyRate = (
+  annualReturn: number,
+) => {
+  if (annualReturn <= 0) {
+    return 0;
+  }
+
+  return (
+    Math.pow(
+      1 + annualReturn / 100,
+      1 / 12,
+    ) - 1
+  );
+};
+
+const calculatePrincipalFutureValue = (
   currentValue: number,
-  monthlyContribution: number,
   monthlyReturn: number,
   months: number,
 ) => {
@@ -82,96 +131,198 @@ const calculateFutureValue = (
     return currentValue;
   }
 
+  return (
+    currentValue *
+    Math.pow(
+      1 + monthlyReturn,
+      months,
+    )
+  );
+};
+
+const calculateContributionFutureValue = (
+  monthlyContribution: number,
+  monthlyReturn: number,
+  months: number,
+) => {
+  if (
+    months <= 0 ||
+    monthlyContribution <= 0
+  ) {
+    return 0;
+  }
+
   if (monthlyReturn === 0) {
     return (
-      currentValue +
       monthlyContribution * months
     );
   }
 
-  const growthFactor = Math.pow(
-    1 + monthlyReturn,
-    months,
-  );
+  const growthFactor =
+    Math.pow(
+      1 + monthlyReturn,
+      months,
+    );
 
-  const currentValueGrowth =
-    currentValue * growthFactor;
-
-  const contributionGrowth =
+  return (
     monthlyContribution *
-    ((growthFactor - 1) / monthlyReturn);
+    ((growthFactor - 1) /
+      monthlyReturn)
+  );
+};
 
-  return currentValueGrowth + contributionGrowth;
+const calculateNetWorthFutureValue = (
+  investments: number,
+  cash: number,
+  monthlyContribution: number,
+  investmentMonthlyReturn: number,
+  cashMonthlyReturn: number,
+  months: number,
+) => {
+  const futureInvestments =
+    calculatePrincipalFutureValue(
+      investments,
+      investmentMonthlyReturn,
+      months,
+    );
+
+  const futureContributions =
+    calculateContributionFutureValue(
+      monthlyContribution,
+      investmentMonthlyReturn,
+      months,
+    );
+
+  const futureCash =
+    calculatePrincipalFutureValue(
+      cash,
+      cashMonthlyReturn,
+      months,
+    );
+
+  return (
+    futureInvestments +
+    futureContributions +
+    futureCash
+  );
 };
 
 const calculateRequiredContribution = (
-  currentValue: number,
+  investments: number,
+  cash: number,
   targetAmount: number,
-  monthlyReturn: number,
+  investmentMonthlyReturn: number,
+  cashMonthlyReturn: number,
   months: number,
 ) => {
-  if (currentValue >= targetAmount) {
-    return 0;
-  }
-
-  if (months <= 0) {
-    return targetAmount - currentValue;
-  }
-
-  if (monthlyReturn === 0) {
-    return Math.max(
-      (targetAmount - currentValue) / months,
-      0,
+  const futureInvestments =
+    calculatePrincipalFutureValue(
+      investments,
+      investmentMonthlyReturn,
+      months,
     );
-  }
 
-  const growthFactor = Math.pow(
-    1 + monthlyReturn,
-    months,
-  );
-
-  const futureCurrentValue =
-    currentValue * growthFactor;
+  const futureCash =
+    calculatePrincipalFutureValue(
+      cash,
+      cashMonthlyReturn,
+      months,
+    );
 
   const remainingTarget =
-    targetAmount - futureCurrentValue;
+    targetAmount -
+    futureInvestments -
+    futureCash;
 
   if (remainingTarget <= 0) {
     return 0;
   }
 
+  if (months <= 0) {
+    return remainingTarget;
+  }
+
+  if (
+    investmentMonthlyReturn === 0
+  ) {
+    return Math.max(
+      remainingTarget / months,
+      0,
+    );
+  }
+
+  const growthFactor =
+    Math.pow(
+      1 +
+        investmentMonthlyReturn,
+      months,
+    );
+
+  const contributionFactor =
+    (growthFactor - 1) /
+    investmentMonthlyReturn;
+
+  if (
+    contributionFactor <= 0
+  ) {
+    return 0;
+  }
+
   return Math.max(
-    (remainingTarget * monthlyReturn) /
-      (growthFactor - 1),
+    remainingTarget /
+      contributionFactor,
     0,
   );
 };
 
 const calculateEstimatedMonths = (
-  currentValue: number,
+  investments: number,
+  cash: number,
   targetAmount: number,
   monthlyContribution: number,
-  monthlyReturn: number,
+  investmentMonthlyReturn: number,
+  cashMonthlyReturn: number,
 ) => {
-  if (currentValue >= targetAmount) {
+  if (
+    investments + cash >=
+    targetAmount
+  ) {
     return 0;
   }
 
   if (
     monthlyContribution <= 0 &&
-    monthlyReturn <= 0
+    investmentMonthlyReturn <= 0 &&
+    cashMonthlyReturn <= 0
   ) {
     return null;
   }
 
-  let projectedValue = currentValue;
+  let projectedInvestments =
+    investments;
 
-  for (let month = 1; month <= 1200; month += 1) {
-    projectedValue =
-      projectedValue * (1 + monthlyReturn) +
+  let projectedCash = cash;
+
+  for (
+    let month = 1;
+    month <= 1200;
+    month += 1
+  ) {
+    projectedInvestments =
+      projectedInvestments *
+        (1 +
+          investmentMonthlyReturn) +
       monthlyContribution;
 
-    if (projectedValue >= targetAmount) {
+    projectedCash =
+      projectedCash *
+      (1 + cashMonthlyReturn);
+
+    if (
+      projectedInvestments +
+        projectedCash >=
+      targetAmount
+    ) {
       return month;
     }
   }
@@ -183,7 +334,8 @@ const addMonths = (
   date: Date,
   months: number,
 ) => {
-  const nextDate = new Date(date);
+  const nextDate =
+    new Date(date);
 
   nextDate.setMonth(
     nextDate.getMonth() + months,
@@ -197,28 +349,29 @@ const MetricCard = ({
   value,
   description,
   icon,
-  valueClassName = "text-slate-900",
+  valueClassName =
+    "text-slate-900",
 }: MetricCardProps) => {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
+    <article className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-xs font-medium text-slate-400">
             {label}
           </p>
 
           <p
-            className={`mt-2 truncate text-2xl font-bold tracking-tight ${valueClassName}`}
+            className={`mt-2 break-words text-lg font-bold ${valueClassName}`}
           >
             {value}
           </p>
 
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-1 text-xs leading-5 text-slate-400">
             {description}
           </p>
         </div>
 
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 shadow-sm">
           {icon}
         </div>
       </div>
@@ -231,162 +384,332 @@ const GoalOverview = () => {
     (state) => state.goal,
   );
 
-  const positions = usePortfolioStore(
-    (state) => state.positions,
-  );
+  const wealth =
+    useWealthSummary();
 
   const { formatCurrency } =
     useCurrencyFormatter();
 
-  const analytics = useMemo(() => {
-    if (!goal) {
-      return null;
-    }
+  const analytics =
+    useMemo(() => {
+      if (
+        !goal ||
+        wealth.netWorth === null ||
+        wealth.investmentCurrentValue ===
+          null
+      ) {
+        return null;
+      }
 
-    const currentValue = positions.reduce(
-      (total, position) =>
-        total + position.shares * position.price,
-      0,
-    );
+      const currentNetWorth =
+        wealth.netWorth;
 
-    const monthsRemaining =
-      calculateMonthsRemaining(goal.targetDate);
+      const investments =
+        wealth.investmentCurrentValue;
 
-    const monthlyReturn =
-      goal.annualReturn / 100 / 12;
+      const cash =
+        wealth.totalCash;
 
-    const projectedValue = calculateFutureValue(
-      currentValue,
-      goal.monthlyContribution,
-      monthlyReturn,
-      monthsRemaining,
-    );
+      const monthsRemaining =
+        calculateMonthsRemaining(
+          goal.targetDate,
+        );
 
-    const requiredMonthlyContribution =
-      calculateRequiredContribution(
-        currentValue,
-        goal.targetAmount,
-        monthlyReturn,
+      const cashMonthlyReturn =
+        annualToMonthlyRate(
+          wealth.cashWeightedYield,
+        );
+
+      const conservativeReturn =
+        Math.max(
+          goal.annualReturn - 2,
+          0,
+        );
+
+      const optimisticReturn =
+        Math.min(
+          goal.annualReturn + 2,
+          100,
+        );
+
+      const scenarioInputs = [
+        {
+          id: "conservative" as const,
+          label: "Conservative",
+          annualReturn:
+            conservativeReturn,
+        },
+
+        {
+          id: "base" as const,
+          label: "Base",
+          annualReturn:
+            goal.annualReturn,
+        },
+
+        {
+          id: "optimistic" as const,
+          label: "Optimistic",
+          annualReturn:
+            optimisticReturn,
+        },
+      ];
+
+      const today = new Date();
+
+      const scenarios:
+        ReturnScenario[] =
+        scenarioInputs.map(
+          (scenario) => {
+            const investmentMonthlyReturn =
+              annualToMonthlyRate(
+                scenario.annualReturn,
+              );
+
+            const projectedValue =
+              calculateNetWorthFutureValue(
+                investments,
+                cash,
+                goal.monthlyContribution,
+                investmentMonthlyReturn,
+                cashMonthlyReturn,
+                monthsRemaining,
+              );
+
+            const requiredContribution =
+              calculateRequiredContribution(
+                investments,
+                cash,
+                goal.targetAmount,
+                investmentMonthlyReturn,
+                cashMonthlyReturn,
+                monthsRemaining,
+              );
+
+            const estimatedMonths =
+              calculateEstimatedMonths(
+                investments,
+                cash,
+                goal.targetAmount,
+                goal.monthlyContribution,
+                investmentMonthlyReturn,
+                cashMonthlyReturn,
+              );
+
+            return {
+              ...scenario,
+
+              projectedValue,
+
+              requiredContribution,
+
+              estimatedCompletionDate:
+                estimatedMonths ===
+                null
+                  ? null
+                  : addMonths(
+                      today,
+                      estimatedMonths,
+                    ),
+
+              isOnTrack:
+                projectedValue >=
+                goal.targetAmount,
+            };
+          },
+        );
+
+      const baseScenario =
+        scenarios.find(
+          (scenario) =>
+            scenario.id === "base",
+        ) ?? scenarios[0];
+
+      const currentProgress =
+        goal.targetAmount > 0
+          ? (currentNetWorth /
+              goal.targetAmount) *
+            100
+          : 0;
+
+      const remainingAmount =
+        Math.max(
+          goal.targetAmount -
+            currentNetWorth,
+          0,
+        );
+
+      const contributionGap =
+        Math.max(
+          baseScenario.requiredContribution -
+            goal.monthlyContribution,
+          0,
+        );
+
+      const isGoalReached =
+        currentNetWorth >=
+        goal.targetAmount;
+
+      const checkpointMonths =
+        Array.from(
+          new Set([
+            0,
+
+            Math.round(
+              monthsRemaining * 0.25,
+            ),
+
+            Math.round(
+              monthsRemaining * 0.5,
+            ),
+
+            Math.round(
+              monthsRemaining * 0.75,
+            ),
+
+            monthsRemaining,
+          ]),
+        ).sort(
+          (
+            firstMonth,
+            secondMonth,
+          ) =>
+            firstMonth -
+            secondMonth,
+        );
+
+      const baseMonthlyReturn =
+        annualToMonthlyRate(
+          goal.annualReturn,
+        );
+
+      const checkpoints:
+        ProjectionCheckpoint[] =
+        checkpointMonths.map(
+          (month) => ({
+            month,
+
+            date: addMonths(
+              today,
+              month,
+            ),
+
+            value:
+              calculateNetWorthFutureValue(
+                investments,
+                cash,
+                goal.monthlyContribution,
+                baseMonthlyReturn,
+                cashMonthlyReturn,
+                month,
+              ),
+          }),
+        );
+
+      return {
+        currentNetWorth,
+        investments,
+        cash,
+
         monthsRemaining,
-      );
 
-    const estimatedMonths =
-      calculateEstimatedMonths(
-        currentValue,
-        goal.targetAmount,
-        goal.monthlyContribution,
-        monthlyReturn,
-      );
+        currentProgress,
+        remainingAmount,
 
-    const currentProgress =
-      goal.targetAmount > 0
-        ? (currentValue / goal.targetAmount) * 100
-        : 0;
+        contributionGap,
 
-    const projectedProgress =
-      goal.targetAmount > 0
-        ? (projectedValue / goal.targetAmount) *
-          100
-        : 0;
+        scenarios,
 
-    const monthlyContributionGap = Math.max(
-      requiredMonthlyContribution -
-        goal.monthlyContribution,
-      0,
-    );
+        baseScenario,
 
-    const isGoalReached =
-      currentValue >= goal.targetAmount;
+        checkpoints,
 
-    const isOnTrack =
-      isGoalReached ||
-      projectedValue >= goal.targetAmount;
+        isGoalReached,
 
-    const checkpointMonths = Array.from(
-      new Set([
-        0,
-        Math.round(monthsRemaining * 0.25),
-        Math.round(monthsRemaining * 0.5),
-        Math.round(monthsRemaining * 0.75),
-        monthsRemaining,
-      ]),
-    ).sort(
-      (firstMonth, secondMonth) =>
-        firstMonth - secondMonth,
-    );
+        cashAnnualReturn:
+          wealth.cashWeightedYield,
+      };
+    }, [
+      goal,
 
-    const today = new Date();
+      wealth.netWorth,
 
-    const checkpoints: ProjectionCheckpoint[] =
-      checkpointMonths.map((month) => ({
-        month,
-        date: addMonths(today, month),
-        value: calculateFutureValue(
-          currentValue,
-          goal.monthlyContribution,
-          monthlyReturn,
-          month,
-        ),
-      }));
+      wealth.investmentCurrentValue,
 
-    const estimatedCompletionDate =
-      estimatedMonths === null
-        ? null
-        : addMonths(today, estimatedMonths);
+      wealth.totalCash,
 
-    return {
-      currentValue,
-      monthsRemaining,
-      projectedValue,
-      requiredMonthlyContribution,
-      estimatedCompletionDate,
-      currentProgress,
-      projectedProgress,
-      monthlyContributionGap,
-      isGoalReached,
-      isOnTrack,
-      checkpoints,
-    };
-  }, [goal, positions]);
+      wealth.cashWeightedYield,
+    ]);
 
-  if (!goal || !analytics) {
+  if (!goal) {
     return (
-      <section className="flex min-h-96 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-        <div className="max-w-md">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-200 text-xl font-bold text-slate-500">
+      <section className="flex min-h-96 items-center justify-center rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div>
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-xl font-bold text-slate-400">
             $
           </div>
 
-          <h2 className="mt-5 text-xl font-semibold text-slate-900">
+          <h2 className="mt-4 text-lg font-semibold text-slate-900">
             No financial goal yet
           </h2>
 
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Create a goal to calculate your required
-            monthly contribution and projected portfolio
-            value.
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+            Create a goal to project
+            your complete net worth,
+            including investments and
+            cash.
           </p>
         </div>
       </section>
     );
   }
 
-  const statusLabel = analytics.isGoalReached
-    ? "Goal reached"
-    : analytics.isOnTrack
-      ? "On track"
-      : "Needs adjustment";
+  if (
+    !wealth.hasCompleteFx ||
+    !analytics
+  ) {
+    return (
+      <section className="rounded-2xl border border-amber-100 bg-amber-50 p-6">
+        <h2 className="font-semibold text-amber-800">
+          Exchange rates required
+        </h2>
 
-  const statusClassName = analytics.isGoalReached
-    ? "bg-blue-50 text-blue-700"
-    : analytics.isOnTrack
-      ? "bg-emerald-50 text-emerald-700"
-      : "bg-amber-50 text-amber-700";
+        <p className="mt-2 text-sm leading-6 text-amber-700">
+          JIS needs valid FX rates for
+          all your cash accounts before
+          calculating your financial
+          goal. Go to Portfolio → Cash
+          accounts and refresh FX
+          rates.
+        </p>
+      </section>
+    );
+  }
 
-  const projectionClassName =
-    analytics.projectedValue >= goal.targetAmount
-      ? "text-emerald-600"
-      : "text-amber-600";
+  const progressWidth =
+    Math.min(
+      Math.max(
+        analytics.currentProgress,
+        0,
+      ),
+      100,
+    );
+
+  const baseStatus =
+    analytics.isGoalReached
+      ? "Goal reached"
+      : analytics.baseScenario
+            .isOnTrack
+        ? "On track"
+        : "Needs adjustment";
+
+  const statusClassName =
+    analytics.isGoalReached
+      ? "bg-blue-50 text-blue-700"
+      : analytics.baseScenario
+            .isOnTrack
+        ? "bg-emerald-50 text-emerald-700"
+        : "bg-amber-50 text-amber-700";
 
   return (
     <div className="space-y-6">
@@ -394,11 +717,13 @@ const GoalOverview = () => {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium text-slate-500">
-              Financial goal
+              Net worth goal
             </p>
 
-            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-              {formatCurrency(goal.targetAmount)}
+            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
+              {formatCurrency(
+                goal.targetAmount,
+              )}
             </h2>
 
             <p className="mt-2 text-sm text-slate-500">
@@ -412,338 +737,317 @@ const GoalOverview = () => {
           </div>
 
           <span
-            className={`self-start rounded-full px-3 py-1.5 text-sm font-semibold ${statusClassName}`}
+            className={`self-start rounded-full px-3 py-1.5 text-xs font-semibold ${statusClassName}`}
           >
-            {statusLabel}
+            {baseStatus}
           </span>
         </div>
 
         <div className="mt-6">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-sm font-medium text-slate-600">
-              Current progress
-            </span>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-slate-400">
+                Current progress
+              </p>
 
-            <span className="text-sm font-semibold text-slate-900">
-              {percentageFormatter.format(
-                analytics.currentProgress,
-              )}
-              %
-            </span>
+              <p className="mt-1 text-xl font-bold text-slate-900">
+                {percentageFormatter.format(
+                  analytics.currentProgress,
+                )}
+                %
+              </p>
+            </div>
+
+            <p className="text-right text-xs text-slate-400">
+              Remaining
+              <span className="mt-1 block text-sm font-semibold text-slate-700">
+                {formatCurrency(
+                  analytics.remainingAmount,
+                )}
+              </span>
+            </p>
           </div>
 
           <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-full rounded-full bg-slate-900 transition-all"
+              className="h-full rounded-full bg-blue-600 transition-all"
               style={{
-                width: `${Math.min(
-                  Math.max(
-                    analytics.currentProgress,
-                    0,
-                  ),
-                  100,
-                )}%`,
+                width: `${progressWidth}%`,
               }}
             />
           </div>
+        </div>
 
-          <div className="mt-3 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:justify-between">
-            <span>
-              Current:{" "}
-              {formatCurrency(
-                analytics.currentValue,
-              )}
-            </span>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            label="Current net worth"
+            value={formatCurrency(
+              analytics.currentNetWorth,
+            )}
+            description="Investments + cash."
+            icon={
+              <span className="text-sm font-bold">
+                $
+              </span>
+            }
+          />
 
-            <span>
-              Remaining:{" "}
-              {formatCurrency(
-                Math.max(
-                  goal.targetAmount -
-                    analytics.currentValue,
-                  0,
-                ),
-              )}
-            </span>
-          </div>
+          <MetricCard
+            label="Investments"
+            value={formatCurrency(
+              analytics.investments,
+            )}
+            description="Current market value."
+            icon={
+              <span className="text-sm">
+                ↗
+              </span>
+            }
+          />
+
+          <MetricCard
+            label="Cash"
+            value={formatCurrency(
+              analytics.cash,
+            )}
+            description={`${returnFormatter.format(
+              analytics.cashAnnualReturn,
+            )}% weighted annual yield.`}
+            icon={
+              <span className="text-sm">
+                ▣
+              </span>
+            }
+          />
+
+          <MetricCard
+            label="Monthly contribution"
+            value={formatCurrency(
+              goal.monthlyContribution,
+            )}
+            description="Planned new investment."
+            icon={
+              <span className="text-sm">
+                +
+              </span>
+            }
+          />
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Current portfolio"
-          value={formatCurrency(
-            analytics.currentValue,
-          )}
-          description="Current market value from Zustand."
-          icon={
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-5 w-5"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 19V9m5 10V5m5 14v-7m5 7V3"
-              />
-            </svg>
-          }
-        />
-
-        <MetricCard
-          label="Projected value"
-          value={formatCurrency(
-            analytics.projectedValue,
-          )}
-          valueClassName={projectionClassName}
-          description={`${percentageFormatter.format(
-            analytics.projectedProgress,
-          )}% of the target by the selected date.`}
-          icon={
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-5 w-5"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="m4 16 5-5 4 4 7-8"
-              />
-
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 7h5v5"
-              />
-            </svg>
-          }
-        />
-
-        <MetricCard
-          label="Required monthly"
-          value={formatCurrency(
-            analytics.requiredMonthlyContribution,
-          )}
-          description="Estimated contribution needed to reach the goal."
-          icon={
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-5 w-5"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 3v18M7 7h7.5a3.5 3.5 0 0 1 0 7H9.5a3.5 3.5 0 0 0 0 7H17"
-              />
-            </svg>
-          }
-        />
-
-        <MetricCard
-          label="Time remaining"
-          value={`${analytics.monthsRemaining} months`}
-          description={`${goal.annualReturn.toFixed(
-            2,
-          )}% expected annual return.`}
-          icon={
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-5 w-5"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="9" />
-
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 7v5l3 2"
-              />
-            </svg>
-          }
-        />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
-        <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
           <h3 className="text-lg font-semibold text-slate-900">
-            Monthly plan
+            Return scenarios
           </h3>
 
           <p className="mt-1 text-sm text-slate-500">
-            Compare your planned contribution with the
-            estimated requirement.
+            Compare how investment
+            returns affect the monthly
+            contribution needed to hit
+            your target.
           </p>
+        </div>
 
-          <div className="mt-6 divide-y divide-slate-100">
-            <div className="flex items-center justify-between gap-4 py-4">
-              <span className="text-sm text-slate-500">
-                Planned contribution
-              </span>
+        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+          {analytics.scenarios.map(
+            (scenario) => {
+              const isBase =
+                scenario.id ===
+                "base";
 
-              <span className="font-semibold text-slate-900">
-                {formatCurrency(
-                  goal.monthlyContribution,
-                )}
-              </span>
-            </div>
+              const contributionGap =
+                Math.max(
+                  scenario.requiredContribution -
+                    goal.monthlyContribution,
+                  0,
+                );
 
-            <div className="flex items-center justify-between gap-4 py-4">
-              <span className="text-sm text-slate-500">
-                Required contribution
-              </span>
+              return (
+                <article
+                  key={scenario.id}
+                  className={`rounded-2xl border p-5 ${
+                    isBase
+                      ? "border-blue-200 bg-blue-50/40"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {scenario.label}
+                      </p>
 
-              <span className="font-semibold text-slate-900">
-                {formatCurrency(
-                  analytics.requiredMonthlyContribution,
-                )}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-4 py-4">
-              <span className="text-sm text-slate-500">
-                Additional amount needed
-              </span>
-
-              <span
-                className={`font-semibold ${
-                  analytics.monthlyContributionGap > 0
-                    ? "text-amber-600"
-                    : "text-emerald-600"
-                }`}
-              >
-                {formatCurrency(
-                  analytics.monthlyContributionGap,
-                )}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-4 py-4">
-              <span className="text-sm text-slate-500">
-                Estimated completion
-              </span>
-
-              <span className="text-right font-semibold text-slate-900">
-                {analytics.estimatedCompletionDate
-                  ? monthYearFormatter.format(
-                      analytics.estimatedCompletionDate,
-                    )
-                  : "Not reached"}
-              </span>
-            </div>
-          </div>
-
-          <div
-            className={`mt-5 rounded-xl px-4 py-3 text-sm ${
-              analytics.isOnTrack
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            {analytics.isGoalReached
-              ? "Your current portfolio already meets this goal."
-              : analytics.isOnTrack
-                ? "Your current monthly plan is projected to reach the goal."
-                : `Increase the monthly contribution by approximately ${formatCurrency(
-                    analytics.monthlyContributionGap,
-                  )} to reach the target on time.`}
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">
-            Projection checkpoints
-          </h3>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Estimated portfolio value throughout the
-            selected period.
-          </p>
-
-          <div className="mt-6 space-y-5">
-            {analytics.checkpoints.map(
-              (checkpoint) => {
-                const checkpointProgress =
-                  goal.targetAmount > 0
-                    ? (checkpoint.value /
-                        goal.targetAmount) *
-                      100
-                    : 0;
-
-                return (
-                  <div key={checkpoint.month}>
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700">
-                          {checkpoint.month === 0
-                            ? "Today"
-                            : monthYearFormatter.format(
-                                checkpoint.date,
-                              )}
-                        </p>
-
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          Month {checkpoint.month}
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {formatCurrency(
-                            checkpoint.value,
-                          )}
-                        </p>
-
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {percentageFormatter.format(
-                            checkpointProgress,
-                          )}
-                          %
-                        </p>
-                      </div>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {returnFormatter.format(
+                          scenario.annualReturn,
+                        )}
+                        %
+                      </p>
                     </div>
 
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-slate-700"
-                        style={{
-                          width: `${Math.min(
-                            Math.max(
-                              checkpointProgress,
-                              0,
-                            ),
-                            100,
-                          )}%`,
-                        }}
-                      />
+                    {isBase && (
+                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                        Your assumption
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-5 space-y-4">
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Required monthly
+                      </p>
+
+                      <p className="mt-1 text-lg font-bold text-slate-900">
+                        {formatCurrency(
+                          scenario.requiredContribution,
+                        )}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Projected at target date
+                      </p>
+
+                      <p
+                        className={`mt-1 font-semibold ${
+                          scenario.isOnTrack
+                            ? "text-emerald-600"
+                            : "text-amber-600"
+                        }`}
+                      >
+                        {formatCurrency(
+                          scenario.projectedValue,
+                        )}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Estimated completion
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {scenario.estimatedCompletionDate
+                          ? monthYearFormatter.format(
+                              scenario.estimatedCompletionDate,
+                            )
+                          : "Not reached"}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-4">
+                      {scenario.isOnTrack ? (
+                        <p className="text-xs font-medium leading-5 text-emerald-600">
+                          Your planned
+                          contribution is on
+                          track in this scenario.
+                        </p>
+                      ) : (
+                        <p className="text-xs font-medium leading-5 text-amber-600">
+                          Add approximately{" "}
+                          {formatCurrency(
+                            contributionGap,
+                          )}{" "}
+                          more per month.
+                        </p>
+                      )}
                     </div>
                   </div>
-                );
-              },
-            )}
-          </div>
-        </article>
+                </article>
+              );
+            },
+          )}
+        </div>
       </section>
 
-      <p className="px-1 text-xs leading-5 text-slate-400">
-        Projections use monthly compounding and assume
-        contributions are made at the end of each month.
-        Actual investment returns can vary.
-      </p>
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">
+            Base projection
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Expected net worth using
+            your {returnFormatter.format(
+              goal.annualReturn,
+            )}
+            % investment assumption.
+          </p>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {analytics.checkpoints.map(
+            (checkpoint) => {
+              const progress =
+                goal.targetAmount > 0
+                  ? (checkpoint.value /
+                      goal.targetAmount) *
+                    100
+                  : 0;
+
+              return (
+                <article
+                  key={checkpoint.month}
+                  className="rounded-xl border border-slate-100 bg-slate-50 p-4"
+                >
+                  <p className="text-xs font-medium text-slate-400">
+                    {checkpoint.month ===
+                    0
+                      ? "Today"
+                      : monthYearFormatter.format(
+                          checkpoint.date,
+                        )}
+                  </p>
+
+                  <p className="mt-2 text-sm font-bold text-slate-900">
+                    {formatCurrency(
+                      checkpoint.value,
+                    )}
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    {percentageFormatter.format(
+                      progress,
+                    )}
+                    % of goal
+                  </p>
+                </article>
+              );
+            },
+          )}
+        </div>
+
+        {!analytics.isGoalReached &&
+          !analytics.baseScenario
+            .isOnTrack && (
+            <div className="mt-6 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-700">
+              At your base return,
+              increase your monthly
+              contribution by
+              approximately{" "}
+              <strong>
+                {formatCurrency(
+                  analytics.contributionGap,
+                )}
+              </strong>{" "}
+              to reach the goal by the
+              selected date.
+            </div>
+          )}
+
+        <p className="mt-5 text-xs leading-5 text-slate-400">
+          Investments use the selected
+          scenario return. Existing cash
+          uses its current weighted yield.
+          Monthly contributions are assumed
+          to be invested at the end of each
+          month. These are projections, not
+          guaranteed results.
+        </p>
+      </section>
     </div>
   );
 };

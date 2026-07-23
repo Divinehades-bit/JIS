@@ -6,19 +6,10 @@ import {
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
 import useGoalStore from "../../store/goalStore";
 
-const getTodayInputValue = () => {
-  const now = new Date();
-
-  const localDate = new Date(
-    now.getTime() -
-      now.getTimezoneOffset() * 60_000,
-  );
-
-  return localDate.toISOString().slice(0, 10);
-};
-
 const GoalForm = () => {
-  const goal = useGoalStore((state) => state.goal);
+  const goal = useGoalStore(
+    (state) => state.goal,
+  );
 
   const saveGoal = useGoalStore(
     (state) => state.saveGoal,
@@ -31,76 +22,99 @@ const GoalForm = () => {
   const { currencySymbol } =
     useCurrencyFormatter();
 
-  const [targetAmount, setTargetAmount] =
-    useState("");
+  const [
+    targetAmount,
+    setTargetAmount,
+  ] = useState("");
 
-  const [targetDate, setTargetDate] =
-    useState("");
+  const [
+    targetDate,
+    setTargetDate,
+  ] = useState("");
 
   const [
     monthlyContribution,
     setMonthlyContribution,
   ] = useState("");
 
-  const [annualReturn, setAnnualReturn] =
-    useState("0");
+  const [
+    annualReturn,
+    setAnnualReturn,
+  ] = useState("8");
 
-  const [error, setError] = useState("");
-
-  const [successMessage, setSuccessMessage] =
+  const [error, setError] =
     useState("");
+
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   useEffect(() => {
     if (!goal) {
       setTargetAmount("");
       setTargetDate("");
       setMonthlyContribution("");
-      setAnnualReturn("0");
+      setAnnualReturn("8");
+
       return;
     }
 
-    setTargetAmount(String(goal.targetAmount));
-    setTargetDate(goal.targetDate);
-
-    setMonthlyContribution(
-      String(goal.monthlyContribution),
+    setTargetAmount(
+      String(goal.targetAmount),
     );
 
-    setAnnualReturn(String(goal.annualReturn));
+    setTargetDate(
+      goal.targetDate,
+    );
+
+    setMonthlyContribution(
+      String(
+        goal.monthlyContribution,
+      ),
+    );
+
+    setAnnualReturn(
+      String(goal.annualReturn),
+    );
   }, [goal]);
+
+  const clearMessages = () => {
+    setError("");
+    setSuccessMessage("");
+  };
 
   const handleSubmit = (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
 
-    setError("");
-    setSuccessMessage("");
+    clearMessages();
 
-    const parsedTargetAmount = Number(
-      targetAmount,
-    );
+    const parsedTargetAmount =
+      Number(targetAmount);
 
-    const parsedMonthlyContribution = Number(
-      monthlyContribution,
-    );
+    const parsedContribution =
+      Number(monthlyContribution);
 
-    const parsedAnnualReturn = Number(
-      annualReturn,
-    );
+    const parsedAnnualReturn =
+      Number(annualReturn);
 
-    const parsedTargetDate = new Date(
-      `${targetDate}T23:59:59`,
-    );
+    const parsedTargetDate =
+      new Date(
+        `${targetDate}T23:59:59`,
+      );
 
     const today = new Date();
 
     if (
-      !Number.isFinite(parsedTargetAmount) ||
+      !Number.isFinite(
+        parsedTargetAmount,
+      ) ||
       parsedTargetAmount <= 0
     ) {
       setError(
-        "Target amount must be greater than zero.",
+        "Target net worth must be greater than zero.",
       );
 
       return;
@@ -108,13 +122,20 @@ const GoalForm = () => {
 
     if (
       !targetDate ||
-      Number.isNaN(parsedTargetDate.getTime())
+      Number.isNaN(
+        parsedTargetDate.getTime(),
+      )
     ) {
-      setError("Enter a valid target date.");
+      setError(
+        "Enter a valid target date.",
+      );
+
       return;
     }
 
-    if (parsedTargetDate <= today) {
+    if (
+      parsedTargetDate <= today
+    ) {
       setError(
         "Target date must be later than today.",
       );
@@ -124,9 +145,9 @@ const GoalForm = () => {
 
     if (
       !Number.isFinite(
-        parsedMonthlyContribution,
+        parsedContribution,
       ) ||
-      parsedMonthlyContribution < 0
+      parsedContribution < 0
     ) {
       setError(
         "Monthly contribution cannot be negative.",
@@ -136,7 +157,9 @@ const GoalForm = () => {
     }
 
     if (
-      !Number.isFinite(parsedAnnualReturn) ||
+      !Number.isFinite(
+        parsedAnnualReturn,
+      ) ||
       parsedAnnualReturn < 0 ||
       parsedAnnualReturn > 100
     ) {
@@ -148,11 +171,16 @@ const GoalForm = () => {
     }
 
     saveGoal({
-      targetAmount: parsedTargetAmount,
+      targetAmount:
+        parsedTargetAmount,
+
       targetDate,
+
       monthlyContribution:
-        parsedMonthlyContribution,
-      annualReturn: parsedAnnualReturn,
+        parsedContribution,
+
+      annualReturn:
+        parsedAnnualReturn,
     });
 
     setSuccessMessage(
@@ -163,17 +191,18 @@ const GoalForm = () => {
   };
 
   const handleClearGoal = () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this financial goal?",
-    );
+    const confirmed =
+      window.confirm(
+        "Delete this financial goal?",
+      );
 
     if (!confirmed) {
       return;
     }
 
     clearGoal();
-    setError("");
-    setSuccessMessage("");
+
+    clearMessages();
   };
 
   return (
@@ -189,9 +218,11 @@ const GoalForm = () => {
             : "Create your goal"}
         </h2>
 
-        <p className="mt-2 text-sm text-slate-500">
-          Define your target, monthly contribution and
-          expected annual return.
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Define your target net
+          worth, monthly contribution
+          and expected investment
+          return.
         </p>
       </div>
 
@@ -201,10 +232,10 @@ const GoalForm = () => {
       >
         <div>
           <label
-            htmlFor="goal-target-amount"
+            htmlFor="goal-target"
             className="mb-2 block text-sm font-medium text-slate-700"
           >
-            Target portfolio value
+            Target net worth
           </label>
 
           <div className="relative">
@@ -213,13 +244,15 @@ const GoalForm = () => {
             </span>
 
             <input
-              id="goal-target-amount"
+              id="goal-target"
               type="number"
               value={targetAmount}
               onChange={(event) => {
-                setTargetAmount(event.target.value);
-                setError("");
-                setSuccessMessage("");
+                setTargetAmount(
+                  event.target.value,
+                );
+
+                clearMessages();
               }}
               placeholder="1000000"
               min="0"
@@ -231,21 +264,22 @@ const GoalForm = () => {
 
         <div>
           <label
-            htmlFor="goal-target-date"
+            htmlFor="goal-date"
             className="mb-2 block text-sm font-medium text-slate-700"
           >
             Target date
           </label>
 
           <input
-            id="goal-target-date"
+            id="goal-date"
             type="date"
             value={targetDate}
-            min={getTodayInputValue()}
             onChange={(event) => {
-              setTargetDate(event.target.value);
-              setError("");
-              setSuccessMessage("");
+              setTargetDate(
+                event.target.value,
+              );
+
+              clearMessages();
             }}
             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
           />
@@ -253,7 +287,7 @@ const GoalForm = () => {
 
         <div>
           <label
-            htmlFor="goal-monthly-contribution"
+            htmlFor="goal-contribution"
             className="mb-2 block text-sm font-medium text-slate-700"
           >
             Planned monthly contribution
@@ -265,18 +299,19 @@ const GoalForm = () => {
             </span>
 
             <input
-              id="goal-monthly-contribution"
+              id="goal-contribution"
               type="number"
-              value={monthlyContribution}
+              value={
+                monthlyContribution
+              }
               onChange={(event) => {
                 setMonthlyContribution(
                   event.target.value,
                 );
 
-                setError("");
-                setSuccessMessage("");
+                clearMessages();
               }}
-              placeholder="1000"
+              placeholder="1500"
               min="0"
               step="any"
               className="w-full rounded-xl border border-slate-200 py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
@@ -286,27 +321,29 @@ const GoalForm = () => {
 
         <div>
           <label
-            htmlFor="goal-annual-return"
+            htmlFor="goal-return"
             className="mb-2 block text-sm font-medium text-slate-700"
           >
-            Expected annual return
+            Base investment return
           </label>
 
           <div className="relative">
             <input
-              id="goal-annual-return"
+              id="goal-return"
               type="number"
               value={annualReturn}
               onChange={(event) => {
-                setAnnualReturn(event.target.value);
-                setError("");
-                setSuccessMessage("");
+                setAnnualReturn(
+                  event.target.value,
+                );
+
+                clearMessages();
               }}
               placeholder="8"
               min="0"
               max="100"
-              step="any"
-              className="w-full rounded-xl border border-slate-200 py-3 pl-4 pr-9 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              step="0.1"
+              className="w-full rounded-xl border border-slate-200 py-3 pl-4 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             />
 
             <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
@@ -314,9 +351,12 @@ const GoalForm = () => {
             </span>
           </div>
 
-          <p className="mt-1.5 text-xs text-slate-400">
-            This is a projection assumption, not a
-            guaranteed return.
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            JIS will also calculate a
+            conservative scenario 2
+            percentage points lower and
+            an optimistic scenario 2
+            points higher.
           </p>
         </div>
 
@@ -342,7 +382,9 @@ const GoalForm = () => {
           {goal && (
             <button
               type="button"
-              onClick={handleClearGoal}
+              onClick={
+                handleClearGoal
+              }
               className="rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50"
             >
               Delete goal
