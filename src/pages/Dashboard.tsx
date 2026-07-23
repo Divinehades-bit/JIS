@@ -5,18 +5,30 @@ import StatsGrid from "../components/dashboard/StatsGrid";
 import TopHoldings from "../components/dashboard/TopHoldings";
 import WealthAllocationChart from "../components/dashboard/WealthAllocationChart";
 import PriceSyncControl from "../components/market/PriceSyncControl";
+import useWealthHistoryRecorder from "../hooks/useWealthHistoryRecorder";
 import usePortfolioStore from "../store/portfolioStore";
 import useSettingsStore from "../store/settingsStore";
 
 const Dashboard = () => {
-  const positions = usePortfolioStore(
-    (state) => state.positions,
-  );
+  /*
+   * Keeps a historical snapshot of the
+   * complete JIS net worth whenever
+   * investments, cash or FX values change.
+   */
+  useWealthHistoryRecorder();
 
-  const portfolioName = useSettingsStore(
-    (state) =>
-      state.settings.portfolioName,
-  );
+  const positions =
+    usePortfolioStore(
+      (state) =>
+        state.positions,
+    );
+
+  const portfolioName =
+    useSettingsStore(
+      (state) =>
+        state.settings
+          .portfolioName,
+    );
 
   return (
     <div className="space-y-6">
@@ -31,9 +43,10 @@ const Dashboard = () => {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Review your total net worth,
-            investments, cash, performance and
-            recent activity.
+            Review your total net
+            worth, investments, cash,
+            performance and recent
+            activity.
           </p>
         </div>
 
@@ -79,13 +92,15 @@ const Dashboard = () => {
       {positions.length === 0 && (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
           <h2 className="text-lg font-semibold text-slate-900">
-            Start building your portfolio
+            Start building your
+            portfolio
           </h2>
 
           <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">
-            Record your first investment or
-            add cash to start tracking your
-            total net worth.
+            Record your first
+            investment or add cash to
+            start tracking your total
+            net worth.
           </p>
 
           <Link
