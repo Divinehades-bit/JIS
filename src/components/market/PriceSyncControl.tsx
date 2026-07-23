@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -12,13 +13,63 @@ type PriceSyncControlProps = {
 const AUTO_REFRESH_INTERVAL_MS =
   15 * 60 * 1000;
 
-const CLOCK_UPDATE_INTERVAL_MS = 30_000;
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+
+const COOLDOWN_STORAGE_KEY =
+  "jis-market-price-cooldown-until";
+
+const COOLDOWN_EVENT_NAME =
+  "jis-market-price-cooldown-change";
 
 const dateTimeFormatter =
   new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   });
+
+const readCooldownEnd = (): number => {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+
+  const storedValue = window.localStorage.getItem(
+    COOLDOWN_STORAGE_KEY,
+  );
+
+  if (!storedValue) {
+    return 0;
+  }
+
+  const parsedValue = Number(storedValue);
+
+  if (!Number.isFinite(parsedValue)) {
+    window.localStorage.removeItem(
+      COOLDOWN_STORAGE_KEY,
+    );
+
+    return 0;
+  }
+
+  return parsedValue;
+};
+
+const saveCooldownEnd = (
+  cooldownEndsAt: number,
+) => {
+  window.localStorage.setItem(
+    COOLDOWN_STORAGE_KEY,
+    String(cooldownEndsAt),
+  );
+
+  window.dispatchEvent(
+    new CustomEvent<number>(
+      COOLDOWN_EVENT_NAME,
+      {
+        detail: cooldownEndsAt,
+      },
+    ),
+  );
+};
 
 const getRelativeTime = (
   dateValue: string,
@@ -35,8 +86,14 @@ const getRelativeTime = (
     0,
   );
 
-  const seconds = Math.floor(difference / 1000);
-  const minutes = Math.floor(seconds / 60);
+  const seconds = Math.floor(
+    difference / 1000,
+  );
+
+  const minutes = Math.floor(
+    seconds / 60,
+  );
+
   const hours = Math.floor(minutes / 60);
 
   if (seconds < 30) {
@@ -68,6 +125,32 @@ const getRelativeTime = (
   );
 };
 
+const getFriendlyErrorMessage = (
+  error: string,
+  cooldownSeconds: number,
+) => {
+  const normalizedError =
+    error.toLowerCase();
+
+  const isCreditLimitError =
+    normalizedError.includes("api credit") ||
+    normalizedError.includes(
+      "run out of api credits",
+    ) ||
+    normalizedError.includes(
+      "current minute",
+    );
+
+  if (isCreditLimitError) {
+    return `The API minute limit was reached. Try again in ${Math.max(
+      cooldownSeconds,
+      1,
+    )} seconds.`;
+  }
+
+  return error;
+};
+
 const PriceSyncControl = ({
   className = "",
 }: PriceSyncControlProps) => {
@@ -91,37 +174,162 @@ const PriceSyncControl = ({
     (state) => state.refreshMarketPrices,
   );
 
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(
+    Date.now(),
+  );
+
+  const [
+    cooldownEndsAt,
+    setCooldownEndsAt,
+  ] = useState(readCooldownEnd);
 
   const uniqueSymbolCount = useMemo(() => {
     return new Set(
       positions
         .map((position) =>
-          position.symbol.trim().toUpperCase(),
+          position.symbol
+            .trim()
+            .toUpperCase(),
         )
         .filter(Boolean),
     ).size;
   }, [positions]);
 
+  const hasPositions =
+    uniqueSymbolCount > 0;
+
   const isLoading =
     priceSyncStatus === "loading";
 
-  const hasPositions = uniqueSymbolCount > 0;
+  const cooldownSeconds = Math.max(
+    Math.ceil(
+      (cooldownEndsAt - now) / 1000,
+    ),
+    0,
+  );
+
+  const isCoolingDown =
+    cooldownSeconds > 0;
 
   const lastUpdateLabel = lastPriceSyncAt
     ? getRelativeTime(lastPriceSyncAt, now)
     : "Never updated";
 
+  const beginCooldown = useCallback(() => {
+    const nextCooldownEnd =
+      Date.now() + REFRESH_COOLDOWN_MS;
+
+    setCooldownEndsAt(nextCooldownEnd);
+
+    saveCooldownEnd(nextCooldownEnd);
+  }, []);
+
+  const executeRefresh =
+    useCallback(async () => {
+      const currentCooldownEnd =
+        readCooldownEnd();
+
+      if (
+        currentCooldownEnd >
+        Date.now()
+      ) {
+        setCooldownEndsAt(
+          currentCooldownEnd,
+        );
+
+        return;
+      }
+
+      if (
+        usePortfolioStore.getState()
+          .priceSyncStatus === "loading"
+      ) {
+        return;
+      }
+
+      beginCooldown();
+
+      await refreshMarketPrices();
+    }, [
+      beginCooldown,
+      refreshMarketPrices,
+    ]);
+
   useEffect(() => {
-    const clockInterval = window.setInterval(
-      () => {
-        setNow(Date.now());
-      },
-      CLOCK_UPDATE_INTERVAL_MS,
+    const clockInterval =
+      window.setInterval(() => {
+        const currentTime = Date.now();
+
+        setNow(currentTime);
+
+        if (
+          cooldownEndsAt > 0 &&
+          cooldownEndsAt <= currentTime
+        ) {
+          window.localStorage.removeItem(
+            COOLDOWN_STORAGE_KEY,
+          );
+
+          setCooldownEndsAt(0);
+        }
+      }, 1000);
+
+    return () => {
+      window.clearInterval(
+        clockInterval,
+      );
+    };
+  }, [cooldownEndsAt]);
+
+  useEffect(() => {
+    const handleStorageChange = (
+      event: StorageEvent,
+    ) => {
+      if (
+        event.key !==
+        COOLDOWN_STORAGE_KEY
+      ) {
+        return;
+      }
+
+      setCooldownEndsAt(
+        event.newValue
+          ? Number(event.newValue)
+          : 0,
+      );
+    };
+
+    const handleCooldownEvent = (
+      event: Event,
+    ) => {
+      const customEvent =
+        event as CustomEvent<number>;
+
+      setCooldownEndsAt(
+        customEvent.detail,
+      );
+    };
+
+    window.addEventListener(
+      "storage",
+      handleStorageChange,
+    );
+
+    window.addEventListener(
+      COOLDOWN_EVENT_NAME,
+      handleCooldownEvent,
     );
 
     return () => {
-      window.clearInterval(clockInterval);
+      window.removeEventListener(
+        "storage",
+        handleStorageChange,
+      );
+
+      window.removeEventListener(
+        COOLDOWN_EVENT_NAME,
+        handleCooldownEvent,
+      );
     };
   }, []);
 
@@ -131,49 +339,85 @@ const PriceSyncControl = ({
     }
 
     const shouldRefresh = () => {
+      const state =
+        usePortfolioStore.getState();
+
       if (
-        usePortfolioStore.getState()
-          .priceSyncStatus === "loading"
+        state.priceSyncStatus ===
+        "loading"
+      ) {
+        return;
+      }
+
+      if (
+        readCooldownEnd() >
+        Date.now()
       ) {
         return;
       }
 
       const latestSync =
-        usePortfolioStore.getState()
-          .lastPriceSyncAt;
+        state.lastPriceSyncAt;
 
       if (!latestSync) {
-        void refreshMarketPrices();
+        void executeRefresh();
         return;
       }
 
       const latestSyncTimestamp =
         new Date(latestSync).getTime();
 
+      const isInvalidTimestamp =
+        !Number.isFinite(
+          latestSyncTimestamp,
+        );
+
+      const isRefreshDue =
+        Date.now() -
+          latestSyncTimestamp >=
+        AUTO_REFRESH_INTERVAL_MS;
+
       if (
-        !Number.isFinite(latestSyncTimestamp) ||
-        Date.now() - latestSyncTimestamp >=
-          AUTO_REFRESH_INTERVAL_MS
+        isInvalidTimestamp ||
+        isRefreshDue
       ) {
-        void refreshMarketPrices();
+        void executeRefresh();
       }
     };
 
     shouldRefresh();
 
-    const refreshChecker = window.setInterval(
-      shouldRefresh,
-      60_000,
-    );
+    const automaticRefreshChecker =
+      window.setInterval(
+        shouldRefresh,
+        60_000,
+      );
 
     return () => {
-      window.clearInterval(refreshChecker);
+      window.clearInterval(
+        automaticRefreshChecker,
+      );
     };
-  }, [hasPositions, refreshMarketPrices]);
+  }, [
+    executeRefresh,
+    hasPositions,
+  ]);
 
-  const handleRefresh = async () => {
-    await refreshMarketPrices();
+  const handleRefresh = () => {
+    void executeRefresh();
   };
+
+  const buttonLabel = (() => {
+    if (isLoading) {
+      return "Updating...";
+    }
+
+    if (isCoolingDown) {
+      return `Refresh in ${cooldownSeconds}s`;
+    }
+
+    return "Refresh prices";
+  })();
 
   const statusText = (() => {
     if (!hasPositions) {
@@ -184,34 +428,52 @@ const PriceSyncControl = ({
       return "Updating market prices...";
     }
 
-    if (priceSyncStatus === "success") {
+    if (
+      priceSyncStatus === "success"
+    ) {
       return `Prices updated · ${lastUpdateLabel}`;
     }
 
-    if (priceSyncStatus === "error") {
+    if (
+      priceSyncStatus === "error"
+    ) {
       return lastPriceSyncAt
-        ? `Partially updated · ${lastUpdateLabel}`
+        ? `Last successful update · ${lastUpdateLabel}`
         : "Price update failed";
     }
 
     return `Last update: ${lastUpdateLabel}`;
   })();
 
+  const friendlyError =
+    priceSyncError
+      ? getFriendlyErrorMessage(
+          priceSyncError,
+          cooldownSeconds,
+        )
+      : null;
+
   return (
     <div className={className}>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <button
           type="button"
           onClick={handleRefresh}
-          disabled={!hasPositions || isLoading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={
+            !hasPositions ||
+            isLoading ||
+            isCoolingDown
+          }
+          className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:opacity-80 sm:w-auto"
         >
           <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
-            className={`h-4 w-4 ${
-              isLoading ? "animate-spin" : ""
+            className={`h-4 w-4 shrink-0 ${
+              isLoading
+                ? "animate-spin"
+                : ""
             }`}
             stroke="currentColor"
             strokeWidth="2"
@@ -229,32 +491,38 @@ const PriceSyncControl = ({
             />
           </svg>
 
-          {isLoading
-            ? "Updating..."
-            : "Refresh prices"}
+          {buttonLabel}
         </button>
 
-        <div
-          role="status"
-          className="text-xs text-slate-500"
-        >
-          {statusText}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+          <span role="status">
+            {statusText}
+          </span>
+
+          <span className="text-slate-300">
+            •
+          </span>
+
+          <span>
+            Auto refresh every 15 min
+          </span>
         </div>
 
-        {priceSyncError && (
+        {friendlyError && (
           <div
             role="alert"
-            className="max-w-sm rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700"
+            className="max-w-md rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700"
           >
-            {priceSyncError}
+            {friendlyError}
           </div>
         )}
 
         {uniqueSymbolCount > 8 && (
-          <div className="max-w-sm rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-            The current safe refresh limit is 8 unique
-            symbols. Your portfolio contains{" "}
-            {uniqueSymbolCount}.
+          <div className="max-w-md rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+            Your portfolio contains{" "}
+            {uniqueSymbolCount} symbols. A
+            maximum of 8 can be refreshed in
+            one request.
           </div>
         )}
       </div>
