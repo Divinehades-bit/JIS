@@ -1,29 +1,38 @@
 import AnalyticsSummary from "../components/analytics/AnalyticsSummary";
+import CashPerformance from "../components/analytics/CashPerformance";
 import HoldingPerformance from "../components/analytics/HoldingPerformance";
 import MonthlyCashFlowChart from "../components/analytics/MonthlyCashFlowChart";
+import WealthAnalysis from "../components/analytics/WealthAnalysis";
 
 const Analytics = () => {
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-sm font-medium text-slate-500">
-          Investment analytics
+          Wealth analytics
         </p>
 
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-          Portfolio performance
+          Financial performance
         </h1>
 
-        <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Analyze cash invested, completed sales,
-          realized profits and the performance of each
-          holding.
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+          Analyze your complete JIS wealth:
+          investments, cash, annual income,
+          allocation and individual asset
+          performance.
         </p>
       </section>
 
       <AnalyticsSummary />
 
-      <MonthlyCashFlowChart />
+      <section className="grid gap-6 xl:grid-cols-2">
+        <WealthAnalysis />
+
+        <MonthlyCashFlowChart />
+      </section>
+
+      <CashPerformance />
 
       <HoldingPerformance />
     </div>

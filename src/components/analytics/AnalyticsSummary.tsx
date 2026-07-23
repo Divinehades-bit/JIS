@@ -1,6 +1,6 @@
-import { useMemo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
-import usePortfolioStore from "../../store/portfolioStore";
+import useWealthSummary from "../../hooks/useWealthSummary";
 
 type SummaryCardProps = {
   title: string;
@@ -10,17 +10,11 @@ type SummaryCardProps = {
   valueClassName?: string;
 };
 
-const getPerformanceClassName = (value: number) => {
-  if (value > 0) {
-    return "text-emerald-600";
-  }
-
-  if (value < 0) {
-    return "text-red-600";
-  }
-
-  return "text-slate-900";
-};
+const percentageFormatter =
+  new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const SummaryCard = ({
   title,
@@ -30,119 +24,75 @@ const SummaryCard = ({
   valueClassName = "text-slate-900",
 }: SummaryCardProps) => {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">
-            {title}
-          </p>
-
-          <p
-            className={`mt-2 truncate text-2xl font-bold tracking-tight ${valueClassName}`}
-          >
-            {value}
-          </p>
-
-          <p className="mt-2 text-xs text-slate-400">
-            {description}
-          </p>
-        </div>
+    <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-medium text-slate-500">
+          {title}
+        </p>
 
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
           {icon}
         </div>
       </div>
+
+      <p
+        title={value}
+        className={`mt-4 break-words text-[clamp(1.3rem,2vw,1.75rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName}`}
+      >
+        {value}
+      </p>
+
+      <p className="mt-3 text-xs leading-5 text-slate-400">
+        {description}
+      </p>
     </article>
   );
 };
 
 const AnalyticsSummary = () => {
-  const positions = usePortfolioStore(
-    (state) => state.positions,
-  );
-
-  const transactions = usePortfolioStore(
-    (state) => state.transactions,
-  );
-
   const {
     formatCurrency,
     formatSignedCurrency,
   } = useCurrencyFormatter();
 
-  const analytics = useMemo(() => {
-    const totalPurchases = transactions
-      .filter(
-        (transaction) => transaction.type === "buy",
-      )
-      .reduce(
-        (total, transaction) =>
-          total + transaction.amount,
-        0,
-      );
+  const summary = useWealthSummary();
 
-    const totalSales = transactions
-      .filter(
-        (transaction) => transaction.type === "sell",
-      )
-      .reduce(
-        (total, transaction) =>
-          total + transaction.amount,
-        0,
-      );
+  const investmentPerformanceClass =
+    summary.investmentGainLoss !== null &&
+    summary.investmentGainLoss > 0
+      ? "text-emerald-600"
+      : summary.investmentGainLoss !== null &&
+          summary.investmentGainLoss < 0
+        ? "text-red-600"
+        : "text-slate-900";
 
-    const realizedGainLoss = transactions
-      .filter(
-        (transaction) => transaction.type === "sell",
-      )
-      .reduce(
-        (total, transaction) =>
-          total +
-          (transaction.realizedGainLoss ?? 0),
-        0,
-      );
+  const netWorth =
+    summary.netWorth === null
+      ? "FX pending"
+      : formatCurrency(summary.netWorth);
 
-    const investedCapital = positions.reduce(
-      (total, position) =>
-        total +
-        position.shares * position.averageCost,
-      0,
-    );
+  const investments =
+    summary.investmentCurrentValue === null
+      ? "FX pending"
+      : formatCurrency(
+          summary.investmentCurrentValue,
+        );
 
-    const currentValue = positions.reduce(
-      (total, position) =>
-        total + position.shares * position.price,
-      0,
-    );
-
-    const unrealizedGainLoss =
-      currentValue - investedCapital;
-
-    const totalGainLoss =
-      realizedGainLoss + unrealizedGainLoss;
-
-    const netCashInvested =
-      totalPurchases - totalSales;
-
-    return {
-      netCashInvested,
-      unrealizedGainLoss,
-      realizedGainLoss,
-      totalGainLoss,
-    };
-  }, [positions, transactions]);
+  const investmentGainLoss =
+    summary.investmentGainLoss === null
+      ? "FX pending"
+      : formatSignedCurrency(
+          summary.investmentGainLoss,
+        );
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <SummaryCard
-        title="Net cash invested"
-        value={formatCurrency(
-          analytics.netCashInvested,
-        )}
-        description="Purchases minus sales recorded in JIS."
+        title="Net worth"
+        value={netWorth}
+        description="Investments plus converted cash balances."
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -152,24 +102,81 @@ const AnalyticsSummary = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M12 3v18M7 7h7.5a3.5 3.5 0 0 1 0 7H9.5a3.5 3.5 0 0 0 0 7H17"
+              d="M4 6h16v13H4zM4 10h16M16 14h2"
             />
           </svg>
         }
       />
 
       <SummaryCard
-        title="Unrealized gain / loss"
-        value={formatSignedCurrency(
-          analytics.unrealizedGainLoss,
-        )}
-        valueClassName={getPerformanceClassName(
-          analytics.unrealizedGainLoss,
-        )}
-        description="Performance of positions currently held."
+        title="Investments"
+        value={investments}
+        description={`${summary.positionCount} market positions currently tracked.`}
         icon={
           <svg
-            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 19V9m5 10V5m5 14v-7m5 7V3"
+            />
+          </svg>
+        }
+      />
+
+      <SummaryCard
+        title="Cash"
+        value={formatCurrency(
+          summary.totalCash,
+        )}
+        description={`${percentageFormatter.format(
+          summary.cashAllocation,
+        )}% of total net worth.`}
+        icon={
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <rect
+              x="3"
+              y="6"
+              width="18"
+              height="13"
+              rx="2"
+            />
+
+            <circle
+              cx="12"
+              cy="12.5"
+              r="2.5"
+            />
+          </svg>
+        }
+      />
+
+      <SummaryCard
+        title="Investment gain / loss"
+        value={investmentGainLoss}
+        valueClassName={
+          investmentPerformanceClass
+        }
+        description={`Unrealized investment return: ${
+          summary.investmentReturn > 0
+            ? "+"
+            : ""
+        }${percentageFormatter.format(
+          summary.investmentReturn,
+        )}%.`}
+        icon={
+          <svg
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -192,17 +199,16 @@ const AnalyticsSummary = () => {
       />
 
       <SummaryCard
-        title="Realized gain / loss"
-        value={formatSignedCurrency(
-          analytics.realizedGainLoss,
+        title="Cash annual income"
+        value={formatCurrency(
+          summary.annualCashIncome,
         )}
-        valueClassName={getPerformanceClassName(
-          analytics.realizedGainLoss,
-        )}
-        description="Profit or loss generated by completed sales."
+        valueClassName="text-emerald-600"
+        description={`${formatCurrency(
+          summary.monthlyCashIncome,
+        )} estimated average per month.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -212,24 +218,24 @@ const AnalyticsSummary = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M5 12h14M12 5l7 7-7 7"
+              d="M12 3v18M16 7.5c0-1.4-1.8-2.5-4-2.5S8 6.1 8 7.5 9.8 10 12 10s4 1.1 4 2.5S14.2 15 12 15s-4-1.1-4-2.5"
             />
           </svg>
         }
       />
 
       <SummaryCard
-        title="Total gain / loss"
-        value={formatSignedCurrency(
-          analytics.totalGainLoss,
-        )}
-        valueClassName={getPerformanceClassName(
-          analytics.totalGainLoss,
-        )}
-        description="Realized and unrealized performance combined."
+        title="Cash annual yield"
+        value={`${percentageFormatter.format(
+          summary.cashWeightedYield,
+        )}%`}
+        description={`Weighted return across ${summary.cashAccountCount} cash ${
+          summary.cashAccountCount === 1
+            ? "account"
+            : "accounts"
+        }.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -239,7 +245,19 @@ const AnalyticsSummary = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M4 19V9m5 10V5m5 14v-7m5 7V3"
+              d="M7 17 17 7"
+            />
+
+            <circle
+              cx="7"
+              cy="7"
+              r="2"
+            />
+
+            <circle
+              cx="17"
+              cy="17"
+              r="2"
             />
           </svg>
         }
