@@ -1,29 +1,49 @@
 import { useState } from "react";
-
+import AddTransactionModal from "../components/portfolio/AddTransactionModal";
+import PortfolioAllocationChart from "../components/portfolio/PortfolioAllocationChart";
 import PortfolioSummary from "../components/portfolio/PortfolioSummary";
-import PortfolioToolbar from "../components/portfolio/PortfolioToolbar";
 import PortfolioTable from "../components/portfolio/PortfolioTable";
-import AddPositionModal from "../components/portfolio/AddPositionModal";
+import PortfolioToolbar from "../components/portfolio/PortfolioToolbar";
+import TransactionHistory from "../components/portfolio/TransactionHistory";
 
-export default function Portfolio() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const Portfolio = () => {
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const [
+    isTransactionModalOpen,
+    setIsTransactionModalOpen,
+  ] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
+        <PortfolioToolbar
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          onRecordTransaction={() =>
+            setIsTransactionModalOpen(true)
+          }
+        />
 
-      <PortfolioSummary />
+        <PortfolioSummary />
 
-      <PortfolioToolbar
-        onAddPosition={() => setIsModalOpen(true)}
+        <PortfolioAllocationChart />
+
+        <PortfolioTable searchTerm={searchTerm} />
+
+        <TransactionHistory
+          searchTerm={searchTerm}
+        />
+      </div>
+
+      <AddTransactionModal
+        isOpen={isTransactionModalOpen}
+        onClose={() =>
+          setIsTransactionModalOpen(false)
+        }
       />
-
-      <PortfolioTable />
-
-      <AddPositionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
-
-    </div>
+    </>
   );
-}
+};
+
+export default Portfolio;

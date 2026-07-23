@@ -1,0 +1,251 @@
+import { useMemo, type ReactNode } from "react";
+import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
+import usePortfolioStore from "../../store/portfolioStore";
+
+type SummaryCardProps = {
+  title: string;
+  value: string;
+  description: string;
+  icon: ReactNode;
+  valueClassName?: string;
+};
+
+const getPerformanceClassName = (value: number) => {
+  if (value > 0) {
+    return "text-emerald-600";
+  }
+
+  if (value < 0) {
+    return "text-red-600";
+  }
+
+  return "text-slate-900";
+};
+
+const SummaryCard = ({
+  title,
+  value,
+  description,
+  icon,
+  valueClassName = "text-slate-900",
+}: SummaryCardProps) => {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-500">
+            {title}
+          </p>
+
+          <p
+            className={`mt-2 truncate text-2xl font-bold tracking-tight ${valueClassName}`}
+          >
+            {value}
+          </p>
+
+          <p className="mt-2 text-xs text-slate-400">
+            {description}
+          </p>
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+          {icon}
+        </div>
+      </div>
+    </article>
+  );
+};
+
+const AnalyticsSummary = () => {
+  const positions = usePortfolioStore(
+    (state) => state.positions,
+  );
+
+  const transactions = usePortfolioStore(
+    (state) => state.transactions,
+  );
+
+  const {
+    formatCurrency,
+    formatSignedCurrency,
+  } = useCurrencyFormatter();
+
+  const analytics = useMemo(() => {
+    const totalPurchases = transactions
+      .filter(
+        (transaction) => transaction.type === "buy",
+      )
+      .reduce(
+        (total, transaction) =>
+          total + transaction.amount,
+        0,
+      );
+
+    const totalSales = transactions
+      .filter(
+        (transaction) => transaction.type === "sell",
+      )
+      .reduce(
+        (total, transaction) =>
+          total + transaction.amount,
+        0,
+      );
+
+    const realizedGainLoss = transactions
+      .filter(
+        (transaction) => transaction.type === "sell",
+      )
+      .reduce(
+        (total, transaction) =>
+          total +
+          (transaction.realizedGainLoss ?? 0),
+        0,
+      );
+
+    const investedCapital = positions.reduce(
+      (total, position) =>
+        total +
+        position.shares * position.averageCost,
+      0,
+    );
+
+    const currentValue = positions.reduce(
+      (total, position) =>
+        total + position.shares * position.price,
+      0,
+    );
+
+    const unrealizedGainLoss =
+      currentValue - investedCapital;
+
+    const totalGainLoss =
+      realizedGainLoss + unrealizedGainLoss;
+
+    const netCashInvested =
+      totalPurchases - totalSales;
+
+    return {
+      netCashInvested,
+      unrealizedGainLoss,
+      realizedGainLoss,
+      totalGainLoss,
+    };
+  }, [positions, transactions]);
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <SummaryCard
+        title="Net cash invested"
+        value={formatCurrency(
+          analytics.netCashInvested,
+        )}
+        description="Purchases minus sales recorded in JIS."
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 3v18M7 7h7.5a3.5 3.5 0 0 1 0 7H9.5a3.5 3.5 0 0 0 0 7H17"
+            />
+          </svg>
+        }
+      />
+
+      <SummaryCard
+        title="Unrealized gain / loss"
+        value={formatSignedCurrency(
+          analytics.unrealizedGainLoss,
+        )}
+        valueClassName={getPerformanceClassName(
+          analytics.unrealizedGainLoss,
+        )}
+        description="Performance of positions currently held."
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m4 16 5-5 4 4 7-8"
+            />
+
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 7h5v5"
+            />
+          </svg>
+        }
+      />
+
+      <SummaryCard
+        title="Realized gain / loss"
+        value={formatSignedCurrency(
+          analytics.realizedGainLoss,
+        )}
+        valueClassName={getPerformanceClassName(
+          analytics.realizedGainLoss,
+        )}
+        description="Profit or loss generated by completed sales."
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 12h14M12 5l7 7-7 7"
+            />
+          </svg>
+        }
+      />
+
+      <SummaryCard
+        title="Total gain / loss"
+        value={formatSignedCurrency(
+          analytics.totalGainLoss,
+        )}
+        valueClassName={getPerformanceClassName(
+          analytics.totalGainLoss,
+        )}
+        description="Realized and unrealized performance combined."
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 19V9m5 10V5m5 14v-7m5 7V3"
+            />
+          </svg>
+        }
+      />
+    </section>
+  );
+};
+
+export default AnalyticsSummary;

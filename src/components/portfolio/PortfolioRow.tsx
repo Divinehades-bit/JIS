@@ -1,86 +1,152 @@
+import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
 import type { Position } from "../../store/portfolioStore";
-import usePortfolioStore from "../../store/portfolioStore";
-import { Pencil, Trash2 } from "lucide-react";
 
-type Props = {
+type PortfolioRowProps = {
   position: Position;
-  totalPortfolio: number;
+  allocation: number;
+  onEdit: (position: Position) => void;
+  onDelete: (position: Position) => void;
 };
 
-export default function PortfolioRow({
+const percentageFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const PortfolioRow = ({
   position,
-  totalPortfolio,
-}: Props) {
-  const removePosition = usePortfolioStore(
-    (state) => state.removePosition
-  );
+  allocation,
+  onEdit,
+  onDelete,
+}: PortfolioRowProps) => {
+  const { formatCurrency, formatSignedCurrency } =
+    useCurrencyFormatter();
 
-  const value = position.shares * position.price;
+  const investedCapital =
+    position.shares * position.averageCost;
 
-  const weight =
-    totalPortfolio > 0
-      ? (value / totalPortfolio) * 100
+  const marketValue =
+    position.shares * position.price;
+
+  const gainLoss = marketValue - investedCapital;
+
+  const returnPercentage =
+    investedCapital > 0
+      ? (gainLoss / investedCapital) * 100
       : 0;
 
+  const isPositive = gainLoss > 0;
+  const isNegative = gainLoss < 0;
+
+  const performanceClassName = isPositive
+    ? "text-emerald-600"
+    : isNegative
+      ? "text-red-600"
+      : "text-slate-600";
+
+  const returnPrefix =
+    returnPercentage > 0 ? "+" : "";
+
   return (
-    <tr className="border-t hover:bg-slate-50 transition">
-
-      <td className="p-4 font-semibold">
-        {position.symbol}
-      </td>
-
-      <td className="p-4 text-right">
-        {position.shares}
-      </td>
-
-      <td className="p-4 text-right">
-        ${position.price.toLocaleString()}
-      </td>
-
-      <td className="p-4 text-right font-semibold">
-        ${value.toLocaleString()}
-      </td>
-
-      <td className="p-4">
-
+    <tr className="transition hover:bg-slate-50">
+      <td className="whitespace-nowrap px-5 py-4">
         <div className="flex items-center gap-3">
-
-          <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden">
-
-            <div
-              className="h-full bg-blue-600"
-              style={{ width: `${weight}%` }}
-            />
-
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-xs font-bold text-white">
+            {position.symbol.slice(0, 3).toUpperCase()}
           </div>
 
-          <span className="text-sm">
-            {weight.toFixed(1)}%
-          </span>
+          <div>
+            <p className="font-semibold text-slate-900">
+              {position.symbol.toUpperCase()}
+            </p>
 
+            <p className="text-xs text-slate-500">
+              Investment position
+            </p>
+          </div>
         </div>
-
       </td>
 
-      <td className="p-4">
+      <td className="whitespace-nowrap px-5 py-4 text-right text-sm text-slate-700">
+        {position.shares.toLocaleString("en-US", {
+          maximumFractionDigits: 4,
+        })}
+      </td>
 
-        <div className="flex justify-center gap-3">
+      <td className="whitespace-nowrap px-5 py-4 text-right text-sm text-slate-700">
+        {formatCurrency(position.averageCost)}
+      </td>
 
-          <button className="text-slate-500 hover:text-blue-600">
-            <Pencil size={18} />
+      <td className="whitespace-nowrap px-5 py-4 text-right text-sm text-slate-700">
+        {formatCurrency(position.price)}
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right text-sm text-slate-700">
+        {formatCurrency(investedCapital)}
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-slate-900">
+        {formatCurrency(marketValue)}
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right">
+        <span
+          className={`text-sm font-semibold ${performanceClassName}`}
+        >
+          {formatSignedCurrency(gainLoss)}
+        </span>
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right">
+        <span
+          className={`text-sm font-semibold ${performanceClassName}`}
+        >
+          {returnPrefix}
+          {percentageFormatter.format(returnPercentage)}%
+        </span>
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right">
+        <div className="ml-auto flex w-28 flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700">
+            {percentageFormatter.format(allocation)}%
+          </span>
+
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-slate-700"
+              style={{
+                width: `${Math.min(
+                  Math.max(allocation, 0),
+                  100,
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+      </td>
+
+      <td className="whitespace-nowrap px-5 py-4 text-right">
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => onEdit(position)}
+            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+          >
+            Edit
           </button>
 
           <button
-            onClick={() => removePosition(position.id)}
-            className="text-slate-500 hover:text-red-600"
+            type="button"
+            onClick={() => onDelete(position)}
+            className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 hover:text-red-700"
           >
-            <Trash2 size={18} />
+            Delete
           </button>
-
         </div>
-
       </td>
-
     </tr>
   );
-}
+};
+
+export default PortfolioRow;
