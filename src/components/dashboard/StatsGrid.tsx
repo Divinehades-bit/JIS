@@ -1,9 +1,6 @@
-import {
-  useMemo,
-  type ReactNode,
-} from "react";
+import type { ReactNode } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
-import usePortfolioStore from "../../store/portfolioStore";
+import useWealthSummary from "../../hooks/useWealthSummary";
 
 type StatCardProps = {
   title: string;
@@ -40,7 +37,7 @@ const StatCard = ({
 
       <p
         title={value}
-        className={`mt-4 min-w-0 whitespace-normal break-words text-[clamp(1.35rem,2vw,1.75rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName}`}
+        className={`mt-4 min-w-0 break-words text-[clamp(1.3rem,2vw,1.75rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName}`}
       >
         {value}
       </p>
@@ -53,79 +50,76 @@ const StatCard = ({
 };
 
 const StatsGrid = () => {
-  const positions = usePortfolioStore(
-    (state) => state.positions,
-  );
-
   const {
     formatCurrency,
     formatSignedCurrency,
   } = useCurrencyFormatter();
 
-  const summary = useMemo(() => {
-    const investedCapital =
-      positions.reduce(
-        (total, position) =>
-          total +
-          position.shares *
-            position.averageCost,
-        0,
-      );
+  const summary = useWealthSummary();
 
-    const currentValue =
-      positions.reduce(
-        (total, position) =>
-          total +
-          position.shares *
-            position.price,
-        0,
-      );
-
-    const gainLoss =
-      currentValue - investedCapital;
-
-    const totalReturn =
-      investedCapital > 0
-        ? (gainLoss /
-            investedCapital) *
-          100
-        : 0;
-
-    return {
-      investedCapital,
-      currentValue,
-      gainLoss,
-      totalReturn,
-    };
-  }, [positions]);
-
-  const isPositive =
-    summary.gainLoss > 0;
-
-  const isNegative =
-    summary.gainLoss < 0;
-
-  const performanceClassName =
-    isPositive
+  const gainClassName =
+    summary.investmentGainLoss !== null &&
+    summary.investmentGainLoss > 0
       ? "text-emerald-600"
-      : isNegative
+      : summary.investmentGainLoss !== null &&
+          summary.investmentGainLoss < 0
         ? "text-red-600"
         : "text-slate-900";
 
-  const returnPrefix =
-    summary.totalReturn > 0
-      ? "+"
-      : "";
+  const formatOptionalCurrency = (
+    value: number | null,
+  ) => {
+    return value === null
+      ? "FX pending"
+      : formatCurrency(value);
+  };
+
+  const gainLossValue =
+    summary.investmentGainLoss === null
+      ? "FX pending"
+      : formatSignedCurrency(
+          summary.investmentGainLoss,
+        );
 
   return (
-    <section className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+    <section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <StatCard
-        title="Current value"
-        value={formatCurrency(
-          summary.currentValue,
+        title="Net worth"
+        value={formatOptionalCurrency(
+          summary.netWorth,
         )}
-        description={`${positions.length} ${
-          positions.length === 1
+        description="Investments plus all converted cash balances."
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 10h18M5 6h14a2 2 0 0 1 2 2v10H3V8a2 2 0 0 1 2-2Z"
+            />
+
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16 14h2"
+            />
+          </svg>
+        }
+      />
+
+      <StatCard
+        title="Investments"
+        value={formatOptionalCurrency(
+          summary.investmentCurrentValue,
+        )}
+        description={`${summary.positionCount} ${
+          summary.positionCount === 1
             ? "position"
             : "positions"
         } currently tracked.`}
@@ -148,11 +142,15 @@ const StatsGrid = () => {
       />
 
       <StatCard
-        title="Invested capital"
+        title="Cash"
         value={formatCurrency(
-          summary.investedCapital,
+          summary.totalCash,
         )}
-        description="Original cost of all portfolio positions."
+        description={`${summary.cashAccountCount} ${
+          summary.cashAccountCount === 1
+            ? "cash account"
+            : "cash accounts"
+        } included.`}
         icon={
           <svg
             aria-hidden="true"
@@ -173,21 +171,29 @@ const StatsGrid = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M7 6V4h10v2M3 11h18"
+              d="M3 10h18"
+            />
+
+            <circle
+              cx="12"
+              cy="14"
+              r="2"
             />
           </svg>
         }
       />
 
       <StatCard
-        title="Total gain / loss"
-        value={formatSignedCurrency(
-          summary.gainLoss,
-        )}
-        valueClassName={
-          performanceClassName
-        }
-        description="Current value minus invested capital."
+        title="Investment gain / loss"
+        value={gainLossValue}
+        valueClassName={gainClassName}
+        description={`Investment return: ${
+          summary.investmentReturn > 0
+            ? "+"
+            : ""
+        }${percentageFormatter.format(
+          summary.investmentReturn,
+        )}%.`}
         icon={
           <svg
             aria-hidden="true"
@@ -213,14 +219,40 @@ const StatsGrid = () => {
       />
 
       <StatCard
-        title="Total return"
-        value={`${returnPrefix}${percentageFormatter.format(
-          summary.totalReturn,
-        )}%`}
-        valueClassName={
-          performanceClassName
+        title="Cash annual income"
+        value={formatCurrency(
+          summary.annualCashIncome,
+        )}
+        valueClassName="text-emerald-600"
+        description={`${formatCurrency(
+          summary.monthlyCashIncome,
+        )} estimated average per month.`}
+        icon={
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 3v18M16 7.5c0-1.4-1.8-2.5-4-2.5S8 6.1 8 7.5 9.8 10 12 10s4 1.1 4 2.5S14.2 15 12 15s-4-1.1-4-2.5"
+            />
+          </svg>
         }
-        description="Overall unrealized portfolio performance."
+      />
+
+      <StatCard
+        title="Cash annual yield"
+        value={`${percentageFormatter.format(
+          summary.cashWeightedYield,
+        )}%`}
+        description={`Cash represents ${percentageFormatter.format(
+          summary.cashAllocation,
+        )}% of total net worth.`}
         icon={
           <svg
             aria-hidden="true"

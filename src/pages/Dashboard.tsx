@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import PortfolioChart from "../components/dashboard/PortfolioChart";
 import PortfolioHistoryChart from "../components/dashboard/PortfolioHistoryChart";
 import RecentActivity from "../components/dashboard/RecentActivity";
 import StatsGrid from "../components/dashboard/StatsGrid";
 import TopHoldings from "../components/dashboard/TopHoldings";
+import WealthAllocationChart from "../components/dashboard/WealthAllocationChart";
 import PriceSyncControl from "../components/market/PriceSyncControl";
 import usePortfolioStore from "../store/portfolioStore";
 import useSettingsStore from "../store/settingsStore";
@@ -31,9 +31,9 @@ const Dashboard = () => {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Review portfolio value,
-            performance, allocation and recent
-            transactions.
+            Review your total net worth,
+            investments, cash, performance and
+            recent activity.
           </p>
         </div>
 
@@ -66,13 +66,13 @@ const Dashboard = () => {
 
       <StatsGrid />
 
-      <PortfolioHistoryChart />
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
+        <PortfolioHistoryChart />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)]">
-        <PortfolioChart />
-
-        <TopHoldings />
+        <WealthAllocationChart />
       </section>
+
+      <TopHoldings />
 
       <RecentActivity />
 
@@ -83,9 +83,9 @@ const Dashboard = () => {
           </h2>
 
           <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">
-            Record your first purchase amount
-            to activate the dashboard
-            calculations and allocation chart.
+            Record your first investment or
+            add cash to start tracking your
+            total net worth.
           </p>
 
           <Link
