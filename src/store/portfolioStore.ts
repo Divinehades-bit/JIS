@@ -54,6 +54,7 @@ export type PriceSyncStatus =
 export type MarketPriceRefreshResult = {
   success: boolean;
   updatedSymbols: string[];
+  deferredSymbols: string[];
   errors: Record<string, string>;
   error?: string;
 };
@@ -65,6 +66,7 @@ type PortfolioStore = {
   priceSyncStatus: PriceSyncStatus;
   priceSyncError: string | null;
   lastPriceSyncAt: string | null;
+  deferredPriceSymbols: string[];
 
   addPosition: (position: Position) => void;
   updatePosition: (position: Position) => void;
@@ -82,6 +84,8 @@ const PORTFOLIO_STORAGE_KEY = "portfolio";
 
 const TRANSACTIONS_STORAGE_KEY =
   "portfolio-transactions";
+
+const MAX_SYMBOLS_PER_REFRESH = 8;
 
 const FLOATING_POINT_TOLERANCE =
   0.00000001;
@@ -113,7 +117,10 @@ const defaultPositions: Position[] = [
 const isRecord = (
   value: unknown,
 ): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null;
+  return (
+    typeof value === "object" &&
+    value !== null
+  );
 };
 
 const normalizePositiveNumber = (
@@ -183,7 +190,9 @@ const normalizePosition = (
     return null;
   }
 
-  const id = normalizePositiveNumber(value.id);
+  const id = normalizePositiveNumber(
+    value.id,
+  );
 
   const shares = normalizePositiveNumber(
     value.shares,
@@ -193,9 +202,10 @@ const normalizePosition = (
     value.price,
   );
 
-  const averageCost = normalizePositiveNumber(
-    value.averageCost ?? value.price,
-  );
+  const averageCost =
+    normalizePositiveNumber(
+      value.averageCost ?? value.price,
+    );
 
   const symbol =
     typeof value.symbol === "string"
@@ -437,7 +447,9 @@ const loadTransactions = (
       const openingTransactions =
         createOpeningTransactions(positions);
 
-      saveTransactions(openingTransactions);
+      saveTransactions(
+        openingTransactions,
+      );
 
       return openingTransactions;
     }
@@ -472,7 +484,9 @@ const loadTransactions = (
             ).getTime(),
         );
 
-    saveTransactions(normalizedTransactions);
+    saveTransactions(
+      normalizedTransactions,
+    );
 
     return normalizedTransactions;
   } catch (error) {
@@ -491,8 +505,9 @@ const getSymbolPositions = (
 ) => {
   return positions.filter(
     (position) =>
-      position.symbol.trim().toUpperCase() ===
-      symbol,
+      position.symbol
+        .trim()
+        .toUpperCase() === symbol,
   );
 };
 
@@ -517,24 +532,26 @@ const replaceSymbolPositions = (
 
   const nextPositions: Position[] = [];
 
-  positions.forEach((position, index) => {
-    const matchesSymbol =
-      position.symbol
-        .trim()
-        .toUpperCase() === symbol;
+  positions.forEach(
+    (position, index) => {
+      const matchesSymbol =
+        position.symbol
+          .trim()
+          .toUpperCase() === symbol;
 
-    if (!matchesSymbol) {
-      nextPositions.push(position);
-      return;
-    }
+      if (!matchesSymbol) {
+        nextPositions.push(position);
+        return;
+      }
 
-    if (
-      index === firstMatchingIndex &&
-      replacement !== null
-    ) {
-      nextPositions.push(replacement);
-    }
-  });
+      if (
+        index === firstMatchingIndex &&
+        replacement !== null
+      ) {
+        nextPositions.push(replacement);
+      }
+    },
+  );
 
   return nextPositions;
 };
@@ -557,7 +574,9 @@ const getLatestPriceUpdate = (
         : null;
     })
     .filter(
-      (timestamp): timestamp is number =>
+      (
+        timestamp,
+      ): timestamp is number =>
         timestamp !== null,
     );
 
@@ -570,7 +589,133 @@ const getLatestPriceUpdate = (
   ).toISOString();
 };
 
-const initialPositions = loadPositions();
+type SymbolPriceAge = {
+  symbol: string;
+  updatedAt: number | null;
+};
+
+const getSymbolsForNextRefresh = (
+  positions: Position[],
+) => {
+  const symbolMap = new Map<
+    string,
+    number | null
+  >();
+
+  positions.forEach((position) => {
+    const symbol = position.symbol
+      .trim()
+      .toUpperCase();
+
+    if (!symbol) {
+      return;
+    }
+
+    const timestamp =
+      position.priceUpdatedAt
+        ? new Date(
+            position.priceUpdatedAt,
+          ).getTime()
+        : Number.NaN;
+
+    const validTimestamp =
+      Number.isFinite(timestamp)
+        ? timestamp
+        : null;
+
+    if (!symbolMap.has(symbol)) {
+      symbolMap.set(
+        symbol,
+        validTimestamp,
+      );
+
+      return;
+    }
+
+    /*
+     * Map.get() can theoretically return
+     * undefined even after Map.has().
+     * Normalize it to null so TypeScript
+     * knows Math.min() only receives numbers.
+     */
+    const existingTimestamp =
+      symbolMap.get(symbol) ?? null;
+
+    if (
+      existingTimestamp === null ||
+      validTimestamp === null
+    ) {
+      symbolMap.set(symbol, null);
+      return;
+    }
+
+    symbolMap.set(
+      symbol,
+      Math.min(
+        existingTimestamp,
+        validTimestamp,
+      ),
+    );
+  });
+
+  const orderedSymbols: SymbolPriceAge[] =
+    Array.from(
+      symbolMap.entries(),
+    ).map(([symbol, updatedAt]) => ({
+      symbol,
+      updatedAt,
+    }));
+
+  orderedSymbols.sort(
+    (firstSymbol, secondSymbol) => {
+      if (
+        firstSymbol.updatedAt === null &&
+        secondSymbol.updatedAt !== null
+      ) {
+        return -1;
+      }
+
+      if (
+        firstSymbol.updatedAt !== null &&
+        secondSymbol.updatedAt === null
+      ) {
+        return 1;
+      }
+
+      if (
+        firstSymbol.updatedAt === null &&
+        secondSymbol.updatedAt === null
+      ) {
+        return firstSymbol.symbol.localeCompare(
+          secondSymbol.symbol,
+        );
+      }
+
+      return (
+        (firstSymbol.updatedAt ?? 0) -
+        (secondSymbol.updatedAt ?? 0)
+      );
+    },
+  );
+
+  const symbols = orderedSymbols.map(
+    (item) => item.symbol,
+  );
+
+  return {
+    selectedSymbols: symbols.slice(
+      0,
+      MAX_SYMBOLS_PER_REFRESH,
+    ),
+
+    deferredSymbols: symbols.slice(
+      MAX_SYMBOLS_PER_REFRESH,
+    ),
+  };
+};
+
+const initialPositions =
+  loadPositions();
 
 const initialTransactions =
   loadTransactions(initialPositions);
@@ -588,7 +733,11 @@ const usePortfolioStore =
     priceSyncError: null,
 
     lastPriceSyncAt:
-      getLatestPriceUpdate(initialPositions),
+      getLatestPriceUpdate(
+        initialPositions,
+      ),
+
+    deferredPriceSymbols: [],
 
     addPosition: (position) => {
       const normalizedPosition =
@@ -607,8 +756,7 @@ const usePortfolioStore =
         const nextPosition: Position = {
           ...normalizedPosition,
           priceUpdatedAt:
-            normalizedPosition.priceUpdatedAt ??
-            new Date().toISOString(),
+            normalizedPosition.priceUpdatedAt,
         };
 
         const nextPositions = [
@@ -616,18 +764,28 @@ const usePortfolioStore =
           nextPosition,
         ];
 
-        const openingTransaction: Transaction = {
-          id: createTransactionId(),
-          type: "opening",
-          symbol: nextPosition.symbol,
-          amount:
-            nextPosition.shares *
-            nextPosition.averageCost,
-          shares: nextPosition.shares,
-          price: nextPosition.averageCost,
-          date: new Date().toISOString(),
-          note: "Position added manually",
-        };
+        const openingTransaction: Transaction =
+          {
+            id: createTransactionId(),
+            type: "opening",
+            symbol: nextPosition.symbol,
+
+            amount:
+              nextPosition.shares *
+              nextPosition.averageCost,
+
+            shares:
+              nextPosition.shares,
+
+            price:
+              nextPosition.averageCost,
+
+            date:
+              new Date().toISOString(),
+
+            note:
+              "Position added manually",
+          };
 
         const nextTransactions = [
           openingTransaction,
@@ -635,7 +793,10 @@ const usePortfolioStore =
         ];
 
         savePositions(nextPositions);
-        saveTransactions(nextTransactions);
+
+        saveTransactions(
+          nextTransactions,
+        );
 
         recordPortfolioSnapshot(
           nextPositions,
@@ -644,7 +805,10 @@ const usePortfolioStore =
 
         return {
           positions: nextPositions,
-          transactions: nextTransactions,
+
+          transactions:
+            nextTransactions,
+
           lastPriceSyncAt:
             getLatestPriceUpdate(
               nextPositions,
@@ -653,9 +817,13 @@ const usePortfolioStore =
       });
     },
 
-    updatePosition: (updatedPosition) => {
+    updatePosition: (
+      updatedPosition,
+    ) => {
       const normalizedPosition =
-        normalizePosition(updatedPosition);
+        normalizePosition(
+          updatedPosition,
+        );
 
       if (!normalizedPosition) {
         console.error(
@@ -668,17 +836,18 @@ const usePortfolioStore =
 
       set((state) => {
         const nextPositions =
-          state.positions.map((position) =>
-            position.id ===
-            normalizedPosition.id
-              ? {
-                  ...normalizedPosition,
-                  priceUpdatedAt:
-                    normalizedPosition.priceUpdatedAt ??
-                    position.priceUpdatedAt ??
-                    new Date().toISOString(),
-                }
-              : position,
+          state.positions.map(
+            (position) =>
+              position.id ===
+              normalizedPosition.id
+                ? {
+                    ...normalizedPosition,
+
+                    priceUpdatedAt:
+                      normalizedPosition.priceUpdatedAt ??
+                      position.priceUpdatedAt,
+                  }
+                : position,
           );
 
         savePositions(nextPositions);
@@ -690,6 +859,7 @@ const usePortfolioStore =
 
         return {
           positions: nextPositions,
+
           lastPriceSyncAt:
             getLatestPriceUpdate(
               nextPositions,
@@ -702,7 +872,8 @@ const usePortfolioStore =
       set((state) => {
         const nextPositions =
           state.positions.filter(
-            (position) => position.id !== id,
+            (position) =>
+              position.id !== id,
           );
 
         savePositions(nextPositions);
@@ -714,6 +885,7 @@ const usePortfolioStore =
 
         return {
           positions: nextPositions,
+
           lastPriceSyncAt:
             getLatestPriceUpdate(
               nextPositions,
@@ -751,7 +923,8 @@ const usePortfolioStore =
         if (!symbol) {
           result = {
             success: false,
-            error: "Symbol is required.",
+            error:
+              "Symbol is required.",
           };
 
           return state;
@@ -778,7 +951,9 @@ const usePortfolioStore =
         }
 
         if (
-          Number.isNaN(parsedDate.getTime())
+          Number.isNaN(
+            parsedDate.getTime(),
+          )
         ) {
           result = {
             success: false,
@@ -816,7 +991,8 @@ const usePortfolioStore =
         const currentShares =
           matchingPositions.reduce(
             (total, position) =>
-              total + position.shares,
+              total +
+              position.shares,
             0,
           );
 
@@ -850,7 +1026,8 @@ const usePortfolioStore =
             calculatedShares;
 
           const nextInvestedCapital =
-            currentInvestedCapital + amount;
+            currentInvestedCapital +
+            amount;
 
           const nextAverageCost =
             nextInvestedCapital /
@@ -860,13 +1037,19 @@ const usePortfolioStore =
             id:
               firstPosition?.id ??
               Date.now(),
+
             symbol,
-            shares: nextShares,
+
+            shares:
+              nextShares,
+
             averageCost:
               nextAverageCost,
+
             price,
+
             priceUpdatedAt:
-              new Date().toISOString(),
+              firstPosition?.priceUpdatedAt,
           };
 
           nextPositions =
@@ -879,6 +1062,7 @@ const usePortfolioStore =
           if (currentShares <= 0) {
             result = {
               success: false,
+
               error: `You do not own any shares of ${symbol}.`,
             };
 
@@ -923,14 +1107,19 @@ const usePortfolioStore =
               id:
                 firstPosition?.id ??
                 Date.now(),
+
               symbol,
+
               shares:
                 remainingShares,
+
               averageCost:
                 currentAverageCost,
+
               price,
+
               priceUpdatedAt:
-                new Date().toISOString(),
+                firstPosition?.priceUpdatedAt,
             };
 
             nextPositions =
@@ -947,13 +1136,19 @@ const usePortfolioStore =
           type: input.type,
           symbol,
           amount,
-          shares: calculatedShares,
+
+          shares:
+            calculatedShares,
+
           price,
+
           date:
             parsedDate.toISOString(),
+
           note:
             input.note?.trim() ||
             undefined,
+
           realizedGainLoss,
         };
 
@@ -974,7 +1169,10 @@ const usePortfolioStore =
         );
 
         savePositions(nextPositions);
-        saveTransactions(nextTransactions);
+
+        saveTransactions(
+          nextTransactions,
+        );
 
         recordPortfolioSnapshot(
           nextPositions,
@@ -987,9 +1185,12 @@ const usePortfolioStore =
         };
 
         return {
-          positions: nextPositions,
+          positions:
+            nextPositions,
+
           transactions:
             nextTransactions,
+
           lastPriceSyncAt:
             getLatestPriceUpdate(
               nextPositions,
@@ -1008,36 +1209,37 @@ const usePortfolioStore =
         return {
           success: false,
           updatedSymbols: [],
+          deferredSymbols: [],
           errors: {},
+
           error:
             "A price update is already running.",
         };
       }
 
-      const symbols = Array.from(
-        new Set(
-          get()
-            .positions.map((position) =>
-              position.symbol
-                .trim()
-                .toUpperCase(),
-            )
-            .filter(Boolean),
-        ),
+      const {
+        selectedSymbols,
+        deferredSymbols,
+      } = getSymbolsForNextRefresh(
+        get().positions,
       );
 
-      if (symbols.length === 0) {
+      if (
+        selectedSymbols.length === 0
+      ) {
         const error =
           "There are no positions to update.";
 
         set({
           priceSyncStatus: "error",
           priceSyncError: error,
+          deferredPriceSymbols: [],
         });
 
         return {
           success: false,
           updatedSymbols: [],
+          deferredSymbols: [],
           errors: {},
           error,
         };
@@ -1051,7 +1253,7 @@ const usePortfolioStore =
       try {
         const response =
           await fetchLatestMarketPrices(
-            symbols,
+            selectedSymbols,
           );
 
         const updatedSymbols =
@@ -1070,7 +1272,9 @@ const usePortfolioStore =
                     .toUpperCase();
 
                 const latestPrice =
-                  response.prices[symbol];
+                  response.prices[
+                    symbol
+                  ];
 
                 if (
                   latestPrice === undefined
@@ -1080,7 +1284,10 @@ const usePortfolioStore =
 
                 return {
                   ...position,
-                  price: latestPrice,
+
+                  price:
+                    latestPrice,
+
                   priceUpdatedAt:
                     response.updatedAt,
                 };
@@ -1094,32 +1301,51 @@ const usePortfolioStore =
                 )}.`
               : null;
 
-          savePositions(nextPositions);
-
-          recordPortfolioSnapshot(
+          savePositions(
             nextPositions,
-            "market-sync",
-            response.updatedAt,
           );
 
+          if (
+            updatedSymbols.length > 0
+          ) {
+            recordPortfolioSnapshot(
+              nextPositions,
+              "market-sync",
+              response.updatedAt,
+            );
+          }
+
           return {
-            positions: nextPositions,
+            positions:
+              nextPositions,
+
             priceSyncStatus:
               partialError
                 ? "error"
                 : "success",
+
             priceSyncError:
               partialError,
+
             lastPriceSyncAt:
               response.updatedAt,
+
+            deferredPriceSymbols:
+              deferredSymbols,
           };
         });
 
         return {
           success:
             updatedSymbols.length > 0,
+
           updatedSymbols,
-          errors: response.errors,
+
+          deferredSymbols,
+
+          errors:
+            response.errors,
+
           error:
             failedSymbols.length > 0
               ? `Some symbols were not updated: ${failedSymbols.join(
@@ -1136,11 +1362,15 @@ const usePortfolioStore =
         set({
           priceSyncStatus: "error",
           priceSyncError: message,
+
+          deferredPriceSymbols:
+            deferredSymbols,
         });
 
         return {
           success: false,
           updatedSymbols: [],
+          deferredSymbols,
           errors: {},
           error: message,
         };

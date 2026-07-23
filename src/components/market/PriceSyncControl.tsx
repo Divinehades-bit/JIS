@@ -13,7 +13,8 @@ type PriceSyncControlProps = {
 const AUTO_REFRESH_INTERVAL_MS =
   15 * 60 * 1000;
 
-const REFRESH_COOLDOWN_MS = 60 * 1000;
+const REFRESH_COOLDOWN_MS =
+  60 * 1000;
 
 const COOLDOWN_STORAGE_KEY =
   "jis-market-price-cooldown-until";
@@ -27,22 +28,28 @@ const dateTimeFormatter =
     timeStyle: "short",
   });
 
-const readCooldownEnd = (): number => {
-  if (typeof window === "undefined") {
+const readCooldownEnd = () => {
+  if (
+    typeof window === "undefined"
+  ) {
     return 0;
   }
 
-  const storedValue = window.localStorage.getItem(
-    COOLDOWN_STORAGE_KEY,
-  );
+  const storedValue =
+    window.localStorage.getItem(
+      COOLDOWN_STORAGE_KEY,
+    );
 
   if (!storedValue) {
     return 0;
   }
 
-  const parsedValue = Number(storedValue);
+  const parsedValue =
+    Number(storedValue);
 
-  if (!Number.isFinite(parsedValue)) {
+  if (
+    !Number.isFinite(parsedValue)
+  ) {
     window.localStorage.removeItem(
       COOLDOWN_STORAGE_KEY,
     );
@@ -75,9 +82,13 @@ const getRelativeTime = (
   dateValue: string,
   now: number,
 ) => {
-  const timestamp = new Date(dateValue).getTime();
+  const timestamp = new Date(
+    dateValue,
+  ).getTime();
 
-  if (!Number.isFinite(timestamp)) {
+  if (
+    !Number.isFinite(timestamp)
+  ) {
     return "Unknown time";
   }
 
@@ -94,7 +105,9 @@ const getRelativeTime = (
     seconds / 60,
   );
 
-  const hours = Math.floor(minutes / 60);
+  const hours = Math.floor(
+    minutes / 60,
+  );
 
   if (seconds < 30) {
     return "Just now";
@@ -125,32 +138,6 @@ const getRelativeTime = (
   );
 };
 
-const getFriendlyErrorMessage = (
-  error: string,
-  cooldownSeconds: number,
-) => {
-  const normalizedError =
-    error.toLowerCase();
-
-  const isCreditLimitError =
-    normalizedError.includes("api credit") ||
-    normalizedError.includes(
-      "run out of api credits",
-    ) ||
-    normalizedError.includes(
-      "current minute",
-    );
-
-  if (isCreditLimitError) {
-    return `The API minute limit was reached. Try again in ${Math.max(
-      cooldownSeconds,
-      1,
-    )} seconds.`;
-  }
-
-  return error;
-};
-
 const PriceSyncControl = ({
   className = "",
 }: PriceSyncControlProps) => {
@@ -158,21 +145,35 @@ const PriceSyncControl = ({
     (state) => state.positions,
   );
 
-  const priceSyncStatus = usePortfolioStore(
-    (state) => state.priceSyncStatus,
-  );
+  const priceSyncStatus =
+    usePortfolioStore(
+      (state) =>
+        state.priceSyncStatus,
+    );
 
-  const priceSyncError = usePortfolioStore(
-    (state) => state.priceSyncError,
-  );
+  const priceSyncError =
+    usePortfolioStore(
+      (state) =>
+        state.priceSyncError,
+    );
 
-  const lastPriceSyncAt = usePortfolioStore(
-    (state) => state.lastPriceSyncAt,
-  );
+  const lastPriceSyncAt =
+    usePortfolioStore(
+      (state) =>
+        state.lastPriceSyncAt,
+    );
 
-  const refreshMarketPrices = usePortfolioStore(
-    (state) => state.refreshMarketPrices,
-  );
+  const deferredPriceSymbols =
+    usePortfolioStore(
+      (state) =>
+        state.deferredPriceSymbols,
+    );
+
+  const refreshMarketPrices =
+    usePortfolioStore(
+      (state) =>
+        state.refreshMarketPrices,
+    );
 
   const [now, setNow] = useState(
     Date.now(),
@@ -183,17 +184,18 @@ const PriceSyncControl = ({
     setCooldownEndsAt,
   ] = useState(readCooldownEnd);
 
-  const uniqueSymbolCount = useMemo(() => {
-    return new Set(
-      positions
-        .map((position) =>
-          position.symbol
-            .trim()
-            .toUpperCase(),
-        )
-        .filter(Boolean),
-    ).size;
-  }, [positions]);
+  const uniqueSymbolCount =
+    useMemo(() => {
+      return new Set(
+        positions
+          .map((position) =>
+            position.symbol
+              .trim()
+              .toUpperCase(),
+          )
+          .filter(Boolean),
+      ).size;
+    }, [positions]);
 
   const hasPositions =
     uniqueSymbolCount > 0;
@@ -201,28 +203,40 @@ const PriceSyncControl = ({
   const isLoading =
     priceSyncStatus === "loading";
 
-  const cooldownSeconds = Math.max(
-    Math.ceil(
-      (cooldownEndsAt - now) / 1000,
-    ),
-    0,
-  );
+  const cooldownSeconds =
+    Math.max(
+      Math.ceil(
+        (cooldownEndsAt - now) /
+          1000,
+      ),
+      0,
+    );
 
   const isCoolingDown =
     cooldownSeconds > 0;
 
-  const lastUpdateLabel = lastPriceSyncAt
-    ? getRelativeTime(lastPriceSyncAt, now)
-    : "Never updated";
+  const lastUpdateLabel =
+    lastPriceSyncAt
+      ? getRelativeTime(
+          lastPriceSyncAt,
+          now,
+        )
+      : "Never updated";
 
-  const beginCooldown = useCallback(() => {
-    const nextCooldownEnd =
-      Date.now() + REFRESH_COOLDOWN_MS;
+  const beginCooldown =
+    useCallback(() => {
+      const nextCooldownEnd =
+        Date.now() +
+        REFRESH_COOLDOWN_MS;
 
-    setCooldownEndsAt(nextCooldownEnd);
+      setCooldownEndsAt(
+        nextCooldownEnd,
+      );
 
-    saveCooldownEnd(nextCooldownEnd);
-  }, []);
+      saveCooldownEnd(
+        nextCooldownEnd,
+      );
+    }, []);
 
   const executeRefresh =
     useCallback(async () => {
@@ -241,8 +255,10 @@ const PriceSyncControl = ({
       }
 
       if (
-        usePortfolioStore.getState()
-          .priceSyncStatus === "loading"
+        usePortfolioStore
+          .getState()
+          .priceSyncStatus ===
+        "loading"
       ) {
         return;
       }
@@ -258,13 +274,15 @@ const PriceSyncControl = ({
   useEffect(() => {
     const clockInterval =
       window.setInterval(() => {
-        const currentTime = Date.now();
+        const currentTime =
+          Date.now();
 
         setNow(currentTime);
 
         if (
           cooldownEndsAt > 0 &&
-          cooldownEndsAt <= currentTime
+          cooldownEndsAt <=
+            currentTime
         ) {
           window.localStorage.removeItem(
             COOLDOWN_STORAGE_KEY,
@@ -364,22 +382,24 @@ const PriceSyncControl = ({
         return;
       }
 
-      const latestSyncTimestamp =
-        new Date(latestSync).getTime();
+      const latestTimestamp =
+        new Date(
+          latestSync,
+        ).getTime();
 
-      const isInvalidTimestamp =
+      const invalidTimestamp =
         !Number.isFinite(
-          latestSyncTimestamp,
+          latestTimestamp,
         );
 
-      const isRefreshDue =
+      const refreshDue =
         Date.now() -
-          latestSyncTimestamp >=
+          latestTimestamp >=
         AUTO_REFRESH_INTERVAL_MS;
 
       if (
-        isInvalidTimestamp ||
-        isRefreshDue
+        invalidTimestamp ||
+        refreshDue
       ) {
         void executeRefresh();
       }
@@ -387,7 +407,7 @@ const PriceSyncControl = ({
 
     shouldRefresh();
 
-    const automaticRefreshChecker =
+    const automaticChecker =
       window.setInterval(
         shouldRefresh,
         60_000,
@@ -395,17 +415,13 @@ const PriceSyncControl = ({
 
     return () => {
       window.clearInterval(
-        automaticRefreshChecker,
+        automaticChecker,
       );
     };
   }, [
     executeRefresh,
     hasPositions,
   ]);
-
-  const handleRefresh = () => {
-    void executeRefresh();
-  };
 
   const buttonLabel = (() => {
     if (isLoading) {
@@ -429,36 +445,32 @@ const PriceSyncControl = ({
     }
 
     if (
-      priceSyncStatus === "success"
+      priceSyncStatus ===
+      "success"
     ) {
       return `Prices updated · ${lastUpdateLabel}`;
     }
 
     if (
-      priceSyncStatus === "error"
+      priceSyncStatus ===
+      "error"
     ) {
       return lastPriceSyncAt
         ? `Last successful update · ${lastUpdateLabel}`
         : "Price update failed";
     }
 
-    return `Last update: ${lastUpdateLabel}`;
+    return `Last update · ${lastUpdateLabel}`;
   })();
-
-  const friendlyError =
-    priceSyncError
-      ? getFriendlyErrorMessage(
-          priceSyncError,
-          cooldownSeconds,
-        )
-      : null;
 
   return (
     <div className={className}>
       <div className="flex min-w-0 flex-col gap-2">
         <button
           type="button"
-          onClick={handleRefresh}
+          onClick={() =>
+            void executeRefresh()
+          }
           disabled={
             !hasPositions ||
             isLoading ||
@@ -508,21 +520,28 @@ const PriceSyncControl = ({
           </span>
         </div>
 
-        {friendlyError && (
+        {deferredPriceSymbols.length >
+          0 &&
+          priceSyncStatus !==
+            "error" && (
+            <p className="text-xs text-slate-400">
+              {
+                deferredPriceSymbols.length
+              }{" "}
+              {deferredPriceSymbols.length ===
+              1
+                ? "asset will"
+                : "assets will"}{" "}
+              refresh on the next cycle.
+            </p>
+          )}
+
+        {priceSyncError && (
           <div
             role="alert"
             className="max-w-md rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700"
           >
-            {friendlyError}
-          </div>
-        )}
-
-        {uniqueSymbolCount > 8 && (
-          <div className="max-w-md rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-            Your portfolio contains{" "}
-            {uniqueSymbolCount} symbols. A
-            maximum of 8 can be refreshed in
-            one request.
+            {priceSyncError}
           </div>
         )}
       </div>
