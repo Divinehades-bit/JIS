@@ -75,6 +75,11 @@ type CashStore = {
 
   removeAccount: (id: string) => void;
 
+  adjustAccountBalance: (
+    id: string,
+    amount: number,
+  ) => CashActionResult;
+
   refreshFxRates: (
     baseCurrency: CurrencyCode,
   ) => Promise<FxRefreshResult>;
@@ -86,10 +91,33 @@ export const CASH_ACCOUNTS_STORAGE_KEY =
 export const CASH_FX_STORAGE_KEY =
   "jis-cash-fx-rates";
 
+const BALANCE_TOLERANCE = 0.00000001;
+
 const isRecord = (
   value: unknown,
 ): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null;
+  return (
+    typeof value === "object" &&
+    value !== null
+  );
+};
+
+const normalizeNonNegativeNumber = (
+  value: unknown,
+): number | null => {
+  const parsedValue =
+    typeof value === "number"
+      ? value
+      : Number(value);
+
+  if (
+    !Number.isFinite(parsedValue) ||
+    parsedValue < 0
+  ) {
+    return null;
+  }
+
+  return parsedValue;
 };
 
 const normalizePositiveNumber = (
@@ -138,7 +166,11 @@ const normalizeIsoDate = (
 
   const parsedDate = new Date(value);
 
-  if (Number.isNaN(parsedDate.getTime())) {
+  if (
+    Number.isNaN(
+      parsedDate.getTime(),
+    )
+  ) {
     return null;
   }
 
@@ -148,7 +180,8 @@ const normalizeIsoDate = (
 const createAccountId = () => {
   if (
     typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
+    typeof crypto.randomUUID ===
+      "function"
   ) {
     return crypto.randomUUID();
   }
@@ -176,32 +209,38 @@ const normalizeAccount = (
       : "";
 
   const institution =
-    typeof value.institution === "string" &&
+    typeof value.institution ===
+      "string" &&
     value.institution.trim()
       ? value.institution.trim()
       : undefined;
 
-  const currency = isSupportedCurrency(
-    value.currency,
-  )
-    ? value.currency
-    : null;
+  const currency =
+    isSupportedCurrency(
+      value.currency,
+    )
+      ? value.currency
+      : null;
 
-  const balance = normalizePositiveNumber(
-    value.balance,
-  );
+  const balance =
+    normalizeNonNegativeNumber(
+      value.balance,
+    );
 
-  const annualYield = normalizeYield(
-    value.annualYield,
-  );
+  const annualYield =
+    normalizeYield(
+      value.annualYield,
+    );
 
-  const createdAt = normalizeIsoDate(
-    value.createdAt,
-  );
+  const createdAt =
+    normalizeIsoDate(
+      value.createdAt,
+    );
 
-  const updatedAt = normalizeIsoDate(
-    value.updatedAt,
-  );
+  const updatedAt =
+    normalizeIsoDate(
+      value.updatedAt,
+    );
 
   if (
     !id ||
@@ -243,73 +282,100 @@ const saveAccounts = (
   }
 };
 
-const loadAccounts = (): CashAccount[] => {
-  try {
-    const storedAccounts =
-      localStorage.getItem(
-        CASH_ACCOUNTS_STORAGE_KEY,
-      );
-
-    if (!storedAccounts) {
-      return [];
-    }
-
-    const parsedAccounts: unknown =
-      JSON.parse(storedAccounts);
-
-    if (!Array.isArray(parsedAccounts)) {
-      saveAccounts([]);
-
-      return [];
-    }
-
-    const normalizedAccounts =
-      parsedAccounts
-        .map(normalizeAccount)
-        .filter(
-          (
-            account,
-          ): account is CashAccount =>
-            account !== null,
+const loadAccounts =
+  (): CashAccount[] => {
+    try {
+      const storedAccounts =
+        localStorage.getItem(
+          CASH_ACCOUNTS_STORAGE_KEY,
         );
 
-    saveAccounts(normalizedAccounts);
+      if (!storedAccounts) {
+        return [];
+      }
 
-    return normalizedAccounts;
-  } catch (error) {
-    console.error(
-      "Unable to load cash accounts:",
-      error,
-    );
+      const parsedAccounts: unknown =
+        JSON.parse(storedAccounts);
 
-    return [];
-  }
-};
+      if (
+        !Array.isArray(
+          parsedAccounts,
+        )
+      ) {
+        saveAccounts([]);
+        return [];
+      }
+
+      const normalizedAccounts =
+        parsedAccounts
+          .map(normalizeAccount)
+          .filter(
+            (
+              account,
+            ): account is CashAccount =>
+              account !== null,
+          );
+
+      saveAccounts(
+        normalizedAccounts,
+      );
+
+      return normalizedAccounts;
+    } catch (error) {
+      console.error(
+        "Unable to load cash accounts:",
+        error,
+      );
+
+      return [];
+    }
+  };
 
 const normalizeRates = (
   value: unknown,
-): Partial<Record<CurrencyCode, number>> => {
+): Partial<
+  Record<CurrencyCode, number>
+> => {
   if (!isRecord(value)) {
     return {};
   }
 
-  return Object.entries(value).reduce<
-    Partial<Record<CurrencyCode, number>>
-  >((accumulator, [currency, rawRate]) => {
-    if (!isSupportedCurrency(currency)) {
+  return Object.entries(
+    value,
+  ).reduce<
+    Partial<
+      Record<
+        CurrencyCode,
+        number
+      >
+    >
+  >(
+    (
+      accumulator,
+      [currency, rawRate],
+    ) => {
+      if (
+        !isSupportedCurrency(
+          currency,
+        )
+      ) {
+        return accumulator;
+      }
+
+      const rate =
+        normalizePositiveNumber(
+          rawRate,
+        );
+
+      if (rate !== null) {
+        accumulator[currency] =
+          rate;
+      }
+
       return accumulator;
-    }
-
-    const rate = normalizePositiveNumber(
-      rawRate,
-    );
-
-    if (rate !== null) {
-      accumulator[currency] = rate;
-    }
-
-    return accumulator;
-  }, {});
+    },
+    {},
+  );
 };
 
 const saveFxData = (
@@ -328,78 +394,92 @@ const saveFxData = (
   }
 };
 
-const loadFxData = (): StoredFxData | null => {
-  try {
-    const storedFxData =
-      localStorage.getItem(
-        CASH_FX_STORAGE_KEY,
+const loadFxData =
+  (): StoredFxData | null => {
+    try {
+      const storedFxData =
+        localStorage.getItem(
+          CASH_FX_STORAGE_KEY,
+        );
+
+      if (!storedFxData) {
+        return null;
+      }
+
+      const parsedFxData: unknown =
+        JSON.parse(storedFxData);
+
+      if (
+        !isRecord(parsedFxData)
+      ) {
+        return null;
+      }
+
+      const baseCurrency =
+        isSupportedCurrency(
+          parsedFxData.baseCurrency,
+        )
+          ? parsedFxData.baseCurrency
+          : null;
+
+      const updatedAt =
+        normalizeIsoDate(
+          parsedFxData.updatedAt,
+        );
+
+      const rates =
+        normalizeRates(
+          parsedFxData.rates,
+        );
+
+      if (
+        !baseCurrency ||
+        !updatedAt
+      ) {
+        return null;
+      }
+
+      return {
+        baseCurrency,
+        rates,
+        updatedAt,
+      };
+    } catch (error) {
+      console.error(
+        "Unable to load FX rates:",
+        error,
       );
 
-    if (!storedFxData) {
       return null;
     }
-
-    const parsedFxData: unknown =
-      JSON.parse(storedFxData);
-
-    if (!isRecord(parsedFxData)) {
-      return null;
-    }
-
-    const baseCurrency =
-      isSupportedCurrency(
-        parsedFxData.baseCurrency,
-      )
-        ? parsedFxData.baseCurrency
-        : null;
-
-    const updatedAt = normalizeIsoDate(
-      parsedFxData.updatedAt,
-    );
-
-    const rates = normalizeRates(
-      parsedFxData.rates,
-    );
-
-    if (!baseCurrency || !updatedAt) {
-      return null;
-    }
-
-    return {
-      baseCurrency,
-      rates,
-      updatedAt,
-    };
-  } catch (error) {
-    console.error(
-      "Unable to load FX rates:",
-      error,
-    );
-
-    return null;
-  }
-};
+  };
 
 const normalizeInput = (
   input: CashAccountInput,
 ): CashAccountInput | null => {
-  const name = input.name.trim();
+  const name =
+    input.name.trim();
 
   const institution =
-    input.institution?.trim() || undefined;
+    input.institution?.trim() ||
+    undefined;
 
-  const balance = normalizePositiveNumber(
-    input.balance,
-  );
+  const balance =
+    normalizeNonNegativeNumber(
+      input.balance,
+    );
 
-  const annualYield = normalizeYield(
-    input.annualYield,
-  );
+  const annualYield =
+    normalizeYield(
+      input.annualYield,
+    );
 
   if (
     !name ||
     name.length > 60 ||
-    !isSupportedCurrency(input.currency) ||
+    !isSupportedCurrency(
+      input.currency,
+    ) ||
     balance === null ||
     annualYield === null
   ) {
@@ -409,222 +489,361 @@ const normalizeInput = (
   return {
     name,
     institution,
-    currency: input.currency,
+    currency:
+      input.currency,
     balance,
     annualYield,
   };
 };
 
-const initialFxData = loadFxData();
+const initialFxData =
+  loadFxData();
 
-const useCashStore = create<CashStore>(
-  (set, get) => ({
-    accounts: loadAccounts(),
+const useCashStore =
+  create<CashStore>(
+    (set, get) => ({
+      accounts:
+        loadAccounts(),
 
-    fxBaseCurrency:
-      initialFxData?.baseCurrency ?? null,
+      fxBaseCurrency:
+        initialFxData?.baseCurrency ??
+        null,
 
-    fxRates: initialFxData?.rates ?? {},
+      fxRates:
+        initialFxData?.rates ?? {},
 
-    fxUpdatedAt:
-      initialFxData?.updatedAt ?? null,
+      fxUpdatedAt:
+        initialFxData?.updatedAt ??
+        null,
 
-    fxSyncStatus: "idle",
+      fxSyncStatus: "idle",
 
-    fxSyncError: null,
+      fxSyncError: null,
 
-    addAccount: (input) => {
-      const normalizedInput =
-        normalizeInput(input);
+      addAccount: (input) => {
+        const normalizedInput =
+          normalizeInput(input);
 
-      if (!normalizedInput) {
-        return {
-          success: false,
-          error:
-            "Enter valid cash account information.",
+        if (!normalizedInput) {
+          return {
+            success: false,
+            error:
+              "Enter valid cash account information.",
+          };
+        }
+
+        const now =
+          new Date().toISOString();
+
+        const nextAccount:
+          CashAccount = {
+          id: createAccountId(),
+
+          ...normalizedInput,
+
+          createdAt: now,
+          updatedAt: now,
         };
-      }
 
-      const now = new Date().toISOString();
+        set((state) => {
+          const nextAccounts = [
+            ...state.accounts,
+            nextAccount,
+          ];
 
-      const nextAccount: CashAccount = {
-        id: createAccountId(),
-        ...normalizedInput,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      set((state) => {
-        const nextAccounts = [
-          ...state.accounts,
-          nextAccount,
-        ];
-
-        saveAccounts(nextAccounts);
-
-        return {
-          accounts: nextAccounts,
-        };
-      });
-
-      return {
-        success: true,
-      };
-    },
-
-    updateAccount: (id, input) => {
-      const normalizedInput =
-        normalizeInput(input);
-
-      if (!normalizedInput) {
-        return {
-          success: false,
-          error:
-            "Enter valid cash account information.",
-        };
-      }
-
-      const existingAccount =
-        get().accounts.find(
-          (account) => account.id === id,
-        );
-
-      if (!existingAccount) {
-        return {
-          success: false,
-          error: "Cash account not found.",
-        };
-      }
-
-      set((state) => {
-        const nextAccounts =
-          state.accounts.map((account) =>
-            account.id === id
-              ? {
-                  ...account,
-                  ...normalizedInput,
-                  updatedAt:
-                    new Date().toISOString(),
-                }
-              : account,
+          saveAccounts(
+            nextAccounts,
           );
 
-        saveAccounts(nextAccounts);
-
-        return {
-          accounts: nextAccounts,
-        };
-      });
-
-      return {
-        success: true,
-      };
-    },
-
-    removeAccount: (id) => {
-      set((state) => {
-        const nextAccounts =
-          state.accounts.filter(
-            (account) => account.id !== id,
-          );
-
-        saveAccounts(nextAccounts);
-
-        return {
-          accounts: nextAccounts,
-        };
-      });
-    },
-
-    refreshFxRates: async (
-      baseCurrency,
-    ) => {
-      if (
-        get().fxSyncStatus === "loading"
-      ) {
-        return {
-          success: false,
-          errors: {},
-          error:
-            "An exchange-rate update is already running.",
-        };
-      }
-
-      const currencies = Array.from(
-        new Set(
-          get().accounts.map(
-            (account) => account.currency,
-          ),
-        ),
-      );
-
-      set({
-        fxSyncStatus: "loading",
-        fxSyncError: null,
-      });
-
-      try {
-        const response = await fetchFxRates(
-          currencies,
-          baseCurrency,
-        );
-
-        const failedCurrencies =
-          Object.keys(response.errors);
-
-        const partialError =
-          failedCurrencies.length > 0
-            ? `Some currencies were not updated: ${failedCurrencies.join(
-                ", ",
-              )}.`
-            : null;
-
-        const fxData: StoredFxData = {
-          baseCurrency:
-            response.baseCurrency,
-          rates: response.rates,
-          updatedAt: response.updatedAt,
-        };
-
-        saveFxData(fxData);
-
-        set({
-          fxBaseCurrency:
-            response.baseCurrency,
-          fxRates: response.rates,
-          fxUpdatedAt: response.updatedAt,
-          fxSyncStatus: partialError
-            ? "error"
-            : "success",
-          fxSyncError: partialError,
+          return {
+            accounts:
+              nextAccounts,
+          };
         });
 
         return {
-          success:
-            Object.keys(response.rates)
-              .length > 0,
-          errors: response.errors,
-          error: partialError ?? undefined,
+          success: true,
         };
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unable to update exchange rates.";
+      },
 
-        set({
-          fxSyncStatus: "error",
-          fxSyncError: message,
+      updateAccount: (
+        id,
+        input,
+      ) => {
+        const normalizedInput =
+          normalizeInput(input);
+
+        if (!normalizedInput) {
+          return {
+            success: false,
+            error:
+              "Enter valid cash account information.",
+          };
+        }
+
+        const existingAccount =
+          get().accounts.find(
+            (account) =>
+              account.id === id,
+          );
+
+        if (!existingAccount) {
+          return {
+            success: false,
+            error:
+              "Cash account not found.",
+          };
+        }
+
+        set((state) => {
+          const nextAccounts =
+            state.accounts.map(
+              (account) =>
+                account.id === id
+                  ? {
+                      ...account,
+                      ...normalizedInput,
+
+                      updatedAt:
+                        new Date().toISOString(),
+                    }
+                  : account,
+            );
+
+          saveAccounts(
+            nextAccounts,
+          );
+
+          return {
+            accounts:
+              nextAccounts,
+          };
         });
 
         return {
-          success: false,
-          errors: {},
-          error: message,
+          success: true,
         };
-      }
-    },
-  }),
-);
+      },
+
+      removeAccount: (id) => {
+        set((state) => {
+          const nextAccounts =
+            state.accounts.filter(
+              (account) =>
+                account.id !== id,
+            );
+
+          saveAccounts(
+            nextAccounts,
+          );
+
+          return {
+            accounts:
+              nextAccounts,
+          };
+        });
+      },
+
+      adjustAccountBalance: (
+        id,
+        amount,
+      ) => {
+        if (
+          !Number.isFinite(amount)
+        ) {
+          return {
+            success: false,
+            error:
+              "Invalid cash movement.",
+          };
+        }
+
+        const account =
+          get().accounts.find(
+            (item) =>
+              item.id === id,
+          );
+
+        if (!account) {
+          return {
+            success: false,
+            error:
+              "Cash account not found.",
+          };
+        }
+
+        const nextBalance =
+          account.balance + amount;
+
+        if (
+          nextBalance <
+          -BALANCE_TOLERANCE
+        ) {
+          return {
+            success: false,
+            error:
+              "The selected cash account does not have enough available balance.",
+          };
+        }
+
+        const normalizedBalance =
+          Math.abs(nextBalance) <=
+          BALANCE_TOLERANCE
+            ? 0
+            : nextBalance;
+
+        set((state) => {
+          const nextAccounts =
+            state.accounts.map(
+              (item) =>
+                item.id === id
+                  ? {
+                      ...item,
+
+                      balance:
+                        normalizedBalance,
+
+                      updatedAt:
+                        new Date().toISOString(),
+                    }
+                  : item,
+            );
+
+          saveAccounts(
+            nextAccounts,
+          );
+
+          return {
+            accounts:
+              nextAccounts,
+          };
+        });
+
+        return {
+          success: true,
+        };
+      },
+
+      refreshFxRates: async (
+        baseCurrency,
+      ) => {
+        if (
+          get().fxSyncStatus ===
+          "loading"
+        ) {
+          return {
+            success: false,
+            errors: {},
+
+            error:
+              "An exchange-rate update is already running.",
+          };
+        }
+
+        const currencies =
+          Array.from(
+            new Set(
+              get().accounts.map(
+                (account) =>
+                  account.currency,
+              ),
+            ),
+          );
+
+        set({
+          fxSyncStatus:
+            "loading",
+
+          fxSyncError: null,
+        });
+
+        try {
+          const response =
+            await fetchFxRates(
+              currencies,
+              baseCurrency,
+            );
+
+          const failedCurrencies =
+            Object.keys(
+              response.errors,
+            );
+
+          const partialError =
+            failedCurrencies.length >
+            0
+              ? `Some currencies were not updated: ${failedCurrencies.join(
+                  ", ",
+                )}.`
+              : null;
+
+          const fxData:
+            StoredFxData = {
+            baseCurrency:
+              response.baseCurrency,
+
+            rates:
+              response.rates,
+
+            updatedAt:
+              response.updatedAt,
+          };
+
+          saveFxData(fxData);
+
+          set({
+            fxBaseCurrency:
+              response.baseCurrency,
+
+            fxRates:
+              response.rates,
+
+            fxUpdatedAt:
+              response.updatedAt,
+
+            fxSyncStatus:
+              partialError
+                ? "error"
+                : "success",
+
+            fxSyncError:
+              partialError,
+          });
+
+          return {
+            success:
+              Object.keys(
+                response.rates,
+              ).length > 0,
+
+            errors:
+              response.errors,
+
+            error:
+              partialError ??
+              undefined,
+          };
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to update exchange rates.";
+
+          set({
+            fxSyncStatus: "error",
+
+            fxSyncError:
+              message,
+          });
+
+          return {
+            success: false,
+            errors: {},
+            error: message,
+          };
+        }
+      },
+    }),
+  );
 
 export default useCashStore;

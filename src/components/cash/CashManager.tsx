@@ -27,92 +27,142 @@ const currencyNames: Record<
 };
 
 const percentageFormatter =
-  new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  );
 
 const dateTimeFormatter =
-  new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  new Intl.DateTimeFormat(
+    "en-US",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    },
+  );
 
 const CashManager = () => {
-  const baseCurrency = useSettingsStore(
-    (state) => state.settings.currency,
-  );
+  const baseCurrency =
+    useSettingsStore(
+      (state) =>
+        state.settings.currency,
+    );
 
   const {
     formatCurrency,
     formatCurrencyFor,
   } = useCurrencyFormatter();
 
-  const accounts = useCashStore(
-    (state) => state.accounts,
+  const accounts =
+    useCashStore(
+      (state) =>
+        state.accounts,
+    );
+
+  const fxBaseCurrency =
+    useCashStore(
+      (state) =>
+        state.fxBaseCurrency,
+    );
+
+  const fxRates =
+    useCashStore(
+      (state) =>
+        state.fxRates,
+    );
+
+  const fxUpdatedAt =
+    useCashStore(
+      (state) =>
+        state.fxUpdatedAt,
+    );
+
+  const fxSyncStatus =
+    useCashStore(
+      (state) =>
+        state.fxSyncStatus,
+    );
+
+  const fxSyncError =
+    useCashStore(
+      (state) =>
+        state.fxSyncError,
+    );
+
+  const addAccount =
+    useCashStore(
+      (state) =>
+        state.addAccount,
+    );
+
+  const updateAccount =
+    useCashStore(
+      (state) =>
+        state.updateAccount,
+    );
+
+  const removeAccount =
+    useCashStore(
+      (state) =>
+        state.removeAccount,
+    );
+
+  const refreshFxRates =
+    useCashStore(
+      (state) =>
+        state.refreshFxRates,
+    );
+
+  const [
+    editingId,
+    setEditingId,
+  ] = useState<
+    string | null
+  >(null);
+
+  const [
+    name,
+    setName,
+  ] = useState("");
+
+  const [
+    institution,
+    setInstitution,
+  ] = useState("");
+
+  const [
+    currency,
+    setCurrency,
+  ] = useState<CurrencyCode>(
+    "USD",
   );
 
-  const fxBaseCurrency = useCashStore(
-    (state) => state.fxBaseCurrency,
-  );
+  const [
+    balance,
+    setBalance,
+  ] = useState("");
 
-  const fxRates = useCashStore(
-    (state) => state.fxRates,
-  );
+  const [
+    annualYield,
+    setAnnualYield,
+  ] = useState("0");
 
-  const fxUpdatedAt = useCashStore(
-    (state) => state.fxUpdatedAt,
-  );
+  const [
+    formError,
+    setFormError,
+  ] = useState("");
 
-  const fxSyncStatus = useCashStore(
-    (state) => state.fxSyncStatus,
-  );
-
-  const fxSyncError = useCashStore(
-    (state) => state.fxSyncError,
-  );
-
-  const addAccount = useCashStore(
-    (state) => state.addAccount,
-  );
-
-  const updateAccount = useCashStore(
-    (state) => state.updateAccount,
-  );
-
-  const removeAccount = useCashStore(
-    (state) => state.removeAccount,
-  );
-
-  const refreshFxRates = useCashStore(
-    (state) => state.refreshFxRates,
-  );
-
-  const [editingId, setEditingId] =
-    useState<string | null>(null);
-
-  const [name, setName] = useState("");
-
-  const [institution, setInstitution] =
-    useState("");
-
-  const [currency, setCurrency] =
-    useState<CurrencyCode>("USD");
-
-  const [balance, setBalance] =
-    useState("");
-
-  const [annualYield, setAnnualYield] =
-    useState("0");
-
-  const [formError, setFormError] =
-    useState("");
-
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   const isFxLoading =
-    fxSyncStatus === "loading";
+    fxSyncStatus ===
+    "loading";
 
   const resetForm = () => {
     setEditingId(null);
@@ -124,120 +174,158 @@ const CashManager = () => {
     setFormError("");
   };
 
-  const accountMetrics = useMemo(() => {
-    return accounts.map((account) => {
-      const rate =
-        fxBaseCurrency === baseCurrency
-          ? fxRates[account.currency]
-          : undefined;
+  const accountMetrics =
+    useMemo(() => {
+      return accounts.map(
+        (account) => {
+          const rate =
+            account.currency ===
+            baseCurrency
+              ? 1
+              : fxBaseCurrency ===
+                  baseCurrency
+                ? fxRates[
+                    account.currency
+                  ]
+                : undefined;
 
-      const validRate =
-        rate !== undefined &&
-        Number.isFinite(rate) &&
-        rate > 0
-          ? rate
-          : null;
+          const validRate =
+            rate !== undefined &&
+            Number.isFinite(rate) &&
+            rate > 0
+              ? rate
+              : null;
 
-      const annualInterestOriginal =
-        account.balance *
-        (account.annualYield / 100);
+          const annualInterestOriginal =
+            account.balance *
+            (account.annualYield /
+              100);
 
-      const monthlyInterestOriginal =
-        annualInterestOriginal / 12;
+          return {
+            account,
+
+            rate:
+              validRate,
+
+            convertedBalance:
+              validRate === null
+                ? null
+                : account.balance *
+                  validRate,
+
+            annualInterestOriginal,
+
+            convertedAnnualInterest:
+              validRate === null
+                ? null
+                : annualInterestOriginal *
+                  validRate,
+          };
+        },
+      );
+    }, [
+      accounts,
+      baseCurrency,
+      fxBaseCurrency,
+      fxRates,
+    ]);
+
+  const summary =
+    useMemo(() => {
+      const convertedAccounts =
+        accountMetrics.filter(
+          (metric) =>
+            metric.convertedBalance !==
+              null &&
+            metric.convertedAnnualInterest !==
+              null,
+        );
+
+      const totalCash =
+        convertedAccounts.reduce(
+          (
+            total,
+            metric,
+          ) =>
+            total +
+            (metric.convertedBalance ??
+              0),
+          0,
+        );
+
+      const annualInterest =
+        convertedAccounts.reduce(
+          (
+            total,
+            metric,
+          ) =>
+            total +
+            (metric.convertedAnnualInterest ??
+              0),
+          0,
+        );
+
+      const weightedYield =
+        totalCash > 0
+          ? (annualInterest /
+              totalCash) *
+            100
+          : 0;
 
       return {
-        account,
-        rate: validRate,
+        totalCash,
 
-        convertedBalance:
-          validRate === null
-            ? null
-            : account.balance * validRate,
+        annualInterest,
 
-        annualInterestOriginal,
+        monthlyInterest:
+          annualInterest / 12,
 
-        monthlyInterestOriginal,
+        weightedYield,
 
-        convertedAnnualInterest:
-          validRate === null
-            ? null
-            : annualInterestOriginal *
-              validRate,
+        missingRates:
+          accounts.length -
+          convertedAccounts.length,
       };
-    });
-  }, [
-    accounts,
-    baseCurrency,
-    fxBaseCurrency,
-    fxRates,
-  ]);
-
-  const summary = useMemo(() => {
-    const convertedAccounts =
-      accountMetrics.filter(
-        (metric) =>
-          metric.convertedBalance !== null &&
-          metric.convertedAnnualInterest !==
-            null,
-      );
-
-    const totalCash =
-      convertedAccounts.reduce(
-        (total, metric) =>
-          total +
-          (metric.convertedBalance ?? 0),
-        0,
-      );
-
-    const annualInterest =
-      convertedAccounts.reduce(
-        (total, metric) =>
-          total +
-          (metric.convertedAnnualInterest ??
-            0),
-        0,
-      );
-
-    const weightedYield =
-      totalCash > 0
-        ? (annualInterest / totalCash) *
-          100
-        : 0;
-
-    return {
-      totalCash,
-      annualInterest,
-      monthlyInterest:
-        annualInterest / 12,
-      weightedYield,
-      missingRates:
-        accounts.length -
-        convertedAccounts.length,
-    };
-  }, [accountMetrics, accounts.length]);
+    }, [
+      accountMetrics,
+      accounts.length,
+    ]);
 
   useEffect(() => {
-    if (accounts.length === 0) {
+    if (
+      accounts.length === 0
+    ) {
       return;
     }
 
-    const timestamp = fxUpdatedAt
-      ? new Date(fxUpdatedAt).getTime()
-      : Number.NaN;
+    const timestamp =
+      fxUpdatedAt
+        ? new Date(
+            fxUpdatedAt,
+          ).getTime()
+        : Number.NaN;
 
     const ratesAreStale =
-      !Number.isFinite(timestamp) ||
-      Date.now() - timestamp >=
+      !Number.isFinite(
+        timestamp,
+      ) ||
+      Date.now() -
+        timestamp >=
         FX_STALE_TIME_MS;
 
     const baseChanged =
-      fxBaseCurrency !== baseCurrency;
+      fxBaseCurrency !==
+      baseCurrency;
 
     if (
-      (ratesAreStale || baseChanged) &&
-      fxSyncStatus !== "loading"
+      (ratesAreStale ||
+        baseChanged) &&
+      fxSyncStatus !==
+        "loading"
     ) {
-      void refreshFxRates(baseCurrency);
+      void refreshFxRates(
+        baseCurrency,
+      );
     }
   }, [
     accounts.length,
@@ -256,7 +344,8 @@ const CashManager = () => {
     setFormError("");
     setSuccessMessage("");
 
-    const parsedBalance = Number(balance);
+    const parsedBalance =
+      Number(balance);
 
     const parsedYield =
       Number(annualYield);
@@ -270,18 +359,22 @@ const CashManager = () => {
     }
 
     if (
-      !Number.isFinite(parsedBalance) ||
-      parsedBalance <= 0
+      !Number.isFinite(
+        parsedBalance,
+      ) ||
+      parsedBalance < 0
     ) {
       setFormError(
-        "Balance must be greater than zero.",
+        "Balance cannot be negative.",
       );
 
       return;
     }
 
     if (
-      !Number.isFinite(parsedYield) ||
+      !Number.isFinite(
+        parsedYield,
+      ) ||
       parsedYield < 0 ||
       parsedYield > 100
     ) {
@@ -296,15 +389,25 @@ const CashManager = () => {
       name,
       institution,
       currency,
-      balance: parsedBalance,
-      annualYield: parsedYield,
+
+      balance:
+        parsedBalance,
+
+      annualYield:
+        parsedYield,
     };
 
-    const result = editingId
-      ? updateAccount(editingId, input)
-      : addAccount(input);
+    const result =
+      editingId
+        ? updateAccount(
+            editingId,
+            input,
+          )
+        : addAccount(input);
 
-    if (!result.success) {
+    if (
+      !result.success
+    ) {
       setFormError(
         result.error ??
           "Unable to save the account.",
@@ -322,45 +425,69 @@ const CashManager = () => {
     resetForm();
 
     window.setTimeout(() => {
-      void refreshFxRates(baseCurrency);
+      void refreshFxRates(
+        baseCurrency,
+      );
     }, 0);
   };
 
   const handleEdit = (
     account: CashAccount,
   ) => {
-    setEditingId(account.id);
-    setName(account.name);
-
-    setInstitution(
-      account.institution ?? "",
+    setEditingId(
+      account.id,
     );
 
-    setCurrency(account.currency);
-    setBalance(String(account.balance));
+    setName(
+      account.name,
+    );
+
+    setInstitution(
+      account.institution ??
+        "",
+    );
+
+    setCurrency(
+      account.currency,
+    );
+
+    setBalance(
+      String(
+        account.balance,
+      ),
+    );
 
     setAnnualYield(
-      String(account.annualYield),
+      String(
+        account.annualYield,
+      ),
     );
 
     setFormError("");
+
     setSuccessMessage("");
   };
 
   const handleDelete = (
     account: CashAccount,
   ) => {
-    const confirmed = window.confirm(
-      `Delete ${account.name}?`,
-    );
+    const confirmed =
+      window.confirm(
+        `Delete ${account.name}?`,
+      );
 
     if (!confirmed) {
       return;
     }
 
-    removeAccount(account.id);
+    removeAccount(
+      account.id,
+    );
 
-    if (editingId === account.id) {
+    if (
+      editingId ===
+      account.id
+    ) {
       resetForm();
     }
   };
@@ -378,9 +505,10 @@ const CashManager = () => {
           </h2>
 
           <p className="mt-2 text-sm text-slate-500">
-            Track cash balances, annual yield
-            and their equivalent in{" "}
-            {baseCurrency}.
+            Track bank balances,
+            broker cash and annual
+            yield in multiple
+            currencies.
           </p>
         </div>
 
@@ -393,36 +521,12 @@ const CashManager = () => {
               )
             }
             disabled={
-              accounts.length === 0 ||
+              accounts.length ===
+                0 ||
               isFxLoading
             }
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              className={`h-4 w-4 ${
-                isFxLoading
-                  ? "animate-spin"
-                  : ""
-              }`}
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5"
-              />
-
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5"
-              />
-            </svg>
-
             {isFxLoading
               ? "Updating FX..."
               : "Refresh FX rates"}
@@ -431,7 +535,9 @@ const CashManager = () => {
           <p className="text-xs text-slate-400">
             {fxUpdatedAt
               ? `Updated ${dateTimeFormatter.format(
-                  new Date(fxUpdatedAt),
+                  new Date(
+                    fxUpdatedAt,
+                  ),
                 )}`
               : "Exchange rates not updated yet"}
           </p>
@@ -451,7 +557,8 @@ const CashManager = () => {
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
-            Converted to {baseCurrency}
+            Converted to{" "}
+            {baseCurrency}
           </p>
         </article>
 
@@ -483,7 +590,8 @@ const CashManager = () => {
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
-            Annual interest divided by 12
+            Annual interest divided
+            by 12
           </p>
         </article>
 
@@ -500,14 +608,17 @@ const CashManager = () => {
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
-            Weighted by converted balance
+            Weighted by converted
+            balance
           </p>
         </article>
       </div>
 
       <div className="grid items-start gap-6 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
         <form
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
           className="space-y-4 rounded-2xl border border-slate-200 p-5"
         >
           <div>
@@ -518,8 +629,8 @@ const CashManager = () => {
             </h3>
 
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Enter the current balance and
-              effective annual yield.
+              Broker cash accounts
+              can start at zero.
             </p>
           </div>
 
@@ -535,12 +646,16 @@ const CashManager = () => {
               id="cash-name"
               type="text"
               value={name}
-              onChange={(event) =>
-                setName(event.target.value)
+              onChange={(
+                event,
+              ) =>
+                setName(
+                  event.target.value,
+                )
               }
-              placeholder="Emergency fund"
+              placeholder="Tyba Cash"
               maxLength={60}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"
             />
           </div>
 
@@ -556,14 +671,16 @@ const CashManager = () => {
               id="cash-institution"
               type="text"
               value={institution}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setInstitution(
                   event.target.value,
                 )
               }
-              placeholder="BCP, Interbank, Tyba..."
+              placeholder="Tyba"
               maxLength={60}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"
             />
           </div>
 
@@ -578,19 +695,27 @@ const CashManager = () => {
             <select
               id="cash-currency"
               value={currency}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setCurrency(
                   event.target
                     .value as CurrencyCode,
                 )
               }
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
             >
               {supportedCurrencies.map(
-                (currencyCode) => (
+                (
+                  currencyCode,
+                ) => (
                   <option
-                    key={currencyCode}
-                    value={currencyCode}
+                    key={
+                      currencyCode
+                    }
+                    value={
+                      currencyCode
+                    }
                   >
                     {currencyCode} —{" "}
                     {
@@ -616,15 +741,17 @@ const CashManager = () => {
               id="cash-balance"
               type="number"
               value={balance}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setBalance(
                   event.target.value,
                 )
               }
-              placeholder="10000"
+              placeholder="0"
               min="0"
               step="any"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm"
             />
           </div>
 
@@ -640,17 +767,21 @@ const CashManager = () => {
               <input
                 id="cash-yield"
                 type="number"
-                value={annualYield}
-                onChange={(event) =>
+                value={
+                  annualYield
+                }
+                onChange={(
+                  event,
+                ) =>
                   setAnnualYield(
                     event.target.value,
                   )
                 }
-                placeholder="4.5"
+                placeholder="0"
                 min="0"
                 max="100"
                 step="any"
-                className="w-full rounded-xl border border-slate-200 py-3 pl-4 pr-10 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                className="w-full rounded-xl border border-slate-200 py-3 pl-4 pr-10 text-sm"
               />
 
               <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
@@ -660,29 +791,25 @@ const CashManager = () => {
           </div>
 
           {formError && (
-            <div
-              role="alert"
-              className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {formError}
             </div>
           )}
 
           {successMessage && (
-            <div
-              role="status"
-              className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
-            >
+            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {successMessage}
             </div>
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex gap-2">
             {editingId && (
               <button
                 type="button"
-                onClick={resetForm}
-                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600"
+                onClick={
+                  resetForm
+                }
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold"
               >
                 Cancel
               </button>
@@ -690,7 +817,7 @@ const CashManager = () => {
 
             <button
               type="submit"
-              className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
             >
               {editingId
                 ? "Save changes"
@@ -700,143 +827,139 @@ const CashManager = () => {
         </form>
 
         <div className="min-w-0">
-          {accounts.length === 0 ? (
+          {accounts.length ===
+          0 ? (
             <div className="flex min-h-80 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
               <div>
                 <h3 className="font-semibold text-slate-900">
-                  No cash accounts yet
+                  No cash accounts
+                  yet
                 </h3>
 
-                <p className="mt-2 max-w-sm text-sm text-slate-500">
-                  Add your first bank account,
-                  deposit or available cash
-                  balance.
+                <p className="mt-2 text-sm text-slate-500">
+                  Add a bank account
+                  or broker cash
+                  account.
                 </p>
               </div>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[1050px] divide-y divide-slate-200">
+              <table className="min-w-[950px] w-full">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
                       Account
                     </th>
 
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500">
                       Balance
                     </th>
 
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500">
                       Annual yield
                     </th>
 
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500">
                       Annual interest
                     </th>
 
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      FX rate
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500">
+                      Value in{" "}
+                      {baseCurrency}
                     </th>
 
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Value in {baseCurrency}
-                    </th>
-
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500">
                       Actions
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-100">
                   {accountMetrics.map(
                     ({
                       account,
-                      rate,
+
                       convertedBalance,
+
                       annualInterestOriginal,
                     }) => (
                       <tr
-                        key={account.id}
-                        className="transition hover:bg-slate-50"
+                        key={
+                          account.id
+                        }
                       >
                         <td className="px-4 py-4">
                           <p className="font-semibold text-slate-900">
-                            {account.name}
+                            {
+                              account.name
+                            }
                           </p>
 
-                          <p className="mt-1 text-xs text-slate-500">
+                          <p className="text-xs text-slate-400">
                             {account.institution ??
                               "No institution"}{" "}
-                            · {account.currency}
+                            ·{" "}
+                            {
+                              account.currency
+                            }
                           </p>
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right text-sm font-semibold text-slate-900">
+                        <td className="px-4 py-4 text-right font-semibold">
                           {formatCurrencyFor(
                             account.balance,
                             account.currency,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right text-sm text-slate-700">
+                        <td className="px-4 py-4 text-right">
                           {percentageFormatter.format(
                             account.annualYield,
                           )}
                           %
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right text-sm text-emerald-600">
+                        <td className="px-4 py-4 text-right text-emerald-600">
                           {formatCurrencyFor(
                             annualInterestOriginal,
                             account.currency,
                           )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right text-sm text-slate-500">
-                          {rate === null
-                            ? "Pending"
-                            : `1 ${account.currency} = ${rate.toFixed(
-                                6,
-                              )} ${baseCurrency}`}
-                        </td>
-
-                        <td className="whitespace-nowrap px-4 py-4 text-right text-sm font-semibold text-slate-900">
+                        <td className="px-4 py-4 text-right font-semibold">
                           {convertedBalance ===
                           null
-                            ? "Rate pending"
+                            ? "FX pending"
                             : formatCurrency(
                                 convertedBalance,
                               )}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleEdit(
-                                  account,
-                                )
-                              }
-                              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                            >
-                              Edit
-                            </button>
+                        <td className="px-4 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleEdit(
+                                account,
+                              )
+                            }
+                            className="mr-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleDelete(
-                                  account,
-                                )
-                              }
-                              className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDelete(
+                                account,
+                              )
+                            }
+                            className="rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     ),
@@ -847,23 +970,9 @@ const CashManager = () => {
           )}
 
           {fxSyncError && (
-            <div
-              role="alert"
-              className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700"
-            >
+            <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
               {fxSyncError}
             </div>
-          )}
-
-          {summary.missingRates > 0 && (
-            <p className="mt-3 text-xs text-amber-600">
-              {summary.missingRates} cash{" "}
-              {summary.missingRates === 1
-                ? "account is"
-                : "accounts are"}{" "}
-              waiting for a valid exchange
-              rate.
-            </p>
           )}
         </div>
       </div>

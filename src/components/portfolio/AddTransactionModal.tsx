@@ -6,6 +6,7 @@ import {
   type MouseEvent,
 } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
+import useCashStore from "../../store/cashStore";
 import usePortfolioStore from "../../store/portfolioStore";
 
 type AddTransactionModalProps = {
@@ -13,90 +14,187 @@ type AddTransactionModalProps = {
   onClose: () => void;
 };
 
-const sharesFormatter = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 6,
-});
+const sharesFormatter =
+  new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 6,
+    },
+  );
 
-const FLOATING_POINT_TOLERANCE = 0.00000001;
+const FLOATING_POINT_TOLERANCE =
+  0.00000001;
 
 const getTodayInputValue = () => {
   const now = new Date();
 
-  const localDate = new Date(
-    now.getTime() -
-      now.getTimezoneOffset() * 60_000,
-  );
+  const localDate =
+    new Date(
+      now.getTime() -
+        now.getTimezoneOffset() *
+          60_000,
+    );
 
-  return localDate.toISOString().slice(0, 10);
+  return localDate
+    .toISOString()
+    .slice(0, 10);
 };
 
 const AddTransactionModal = ({
   isOpen,
   onClose,
 }: AddTransactionModalProps) => {
-  const positions = usePortfolioStore(
-    (state) => state.positions,
-  );
+  const positions =
+    usePortfolioStore(
+      (state) =>
+        state.positions,
+    );
 
-  const addTransaction = usePortfolioStore(
-    (state) => state.addTransaction,
-  );
+  const addTransaction =
+    usePortfolioStore(
+      (state) =>
+        state.addTransaction,
+    );
+
+  const cashAccounts =
+    useCashStore(
+      (state) =>
+        state.accounts,
+    );
 
   const {
-    currencySymbol,
-    formatCurrency,
+    formatCurrencyFor,
+    getCurrencySymbol,
   } = useCurrencyFormatter();
 
-  const [type, setType] = useState<
+  const [
+    type,
+    setType,
+  ] = useState<
     "buy" | "sell"
   >("buy");
 
-  const [symbol, setSymbol] = useState("");
-  const [amount, setAmount] = useState("");
-  const [price, setPrice] = useState("");
+  const [
+    symbol,
+    setSymbol,
+  ] = useState("");
 
-  const [date, setDate] = useState(
+  const [
+    amount,
+    setAmount,
+  ] = useState("");
+
+  const [
+    price,
+    setPrice,
+  ] = useState("");
+
+  const [
+    date,
+    setDate,
+  ] = useState(
     getTodayInputValue(),
   );
 
-  const [note, setNote] = useState("");
-  const [error, setError] = useState("");
+  const [
+    note,
+    setNote,
+  ] = useState("");
 
-  const normalizedSymbol = symbol
-    .trim()
-    .toUpperCase();
+  const [
+    cashAccountId,
+    setCashAccountId,
+  ] = useState("");
 
-  const parsedAmount = Number(amount);
-  const parsedPrice = Number(price);
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const usdSymbol =
+    getCurrencySymbol("USD");
+
+  const usdCashAccounts =
+    useMemo(
+      () =>
+        cashAccounts.filter(
+          (account) =>
+            account.currency ===
+            "USD",
+        ),
+      [cashAccounts],
+    );
+
+  const selectedCashAccount =
+    useMemo(
+      () =>
+        usdCashAccounts.find(
+          (account) =>
+            account.id ===
+            cashAccountId,
+        ) ?? null,
+      [
+        cashAccountId,
+        usdCashAccounts,
+      ],
+    );
+
+  const normalizedSymbol =
+    symbol
+      .trim()
+      .toUpperCase();
+
+  const parsedAmount =
+    Number(amount);
+
+  const parsedPrice =
+    Number(price);
 
   const calculatedShares =
-    Number.isFinite(parsedAmount) &&
+    Number.isFinite(
+      parsedAmount,
+    ) &&
     parsedAmount > 0 &&
-    Number.isFinite(parsedPrice) &&
+    Number.isFinite(
+      parsedPrice,
+    ) &&
     parsedPrice > 0
-      ? parsedAmount / parsedPrice
+      ? parsedAmount /
+        parsedPrice
       : 0;
 
-  const currentShares = useMemo(() => {
-    return positions
-      .filter(
-        (position) =>
-          position.symbol
-            .trim()
-            .toUpperCase() === normalizedSymbol,
-      )
-      .reduce(
-        (total, position) =>
-          total + position.shares,
-        0,
-      );
-  }, [positions, normalizedSymbol]);
+  const currentShares =
+    useMemo(() => {
+      return positions
+        .filter(
+          (position) =>
+            position.symbol
+              .trim()
+              .toUpperCase() ===
+            normalizedSymbol,
+        )
+        .reduce(
+          (
+            total,
+            position,
+          ) =>
+            total +
+            position.shares,
+          0,
+        );
+    }, [
+      positions,
+      normalizedSymbol,
+    ]);
 
   const maximumSellAmount =
-    Number.isFinite(parsedPrice) &&
+    Number.isFinite(
+      parsedPrice,
+    ) &&
     parsedPrice > 0
-      ? currentShares * parsedPrice
+      ? currentShares *
+        parsedPrice
       : 0;
 
   const resetForm = () => {
@@ -104,8 +202,15 @@ const AddTransactionModal = ({
     setSymbol("");
     setAmount("");
     setPrice("");
-    setDate(getTodayInputValue());
+
+    setDate(
+      getTodayInputValue(),
+    );
+
     setNote("");
+
+    setCashAccountId("");
+
     setError("");
   };
 
@@ -119,7 +224,9 @@ const AddTransactionModal = ({
     const handleEscape = (
       event: KeyboardEvent,
     ) => {
-      if (event.key === "Escape") {
+      if (
+        event.key === "Escape"
+      ) {
         onClose();
       }
     };
@@ -135,14 +242,46 @@ const AddTransactionModal = ({
         handleEscape,
       );
     };
-  }, [isOpen, onClose]);
+  }, [
+    isOpen,
+    onClose,
+  ]);
+
+  useEffect(() => {
+    if (
+      type !== "sell"
+    ) {
+      return;
+    }
+
+    if (
+      cashAccountId
+    ) {
+      return;
+    }
+
+    const firstUsdAccount =
+      usdCashAccounts[0];
+
+    if (
+      firstUsdAccount
+    ) {
+      setCashAccountId(
+        firstUsdAccount.id,
+      );
+    }
+  }, [
+    type,
+    cashAccountId,
+    usdCashAccounts,
+  ]);
 
   if (!isOpen) {
     return null;
   }
 
   const handleSubmit = (
-    event: FormEvent<HTMLFormElement>,
+    event: FormEvent,
   ) => {
     event.preventDefault();
 
@@ -156,12 +295,15 @@ const AddTransactionModal = ({
       return;
     }
 
-    const transactionDate = new Date(
-      `${date}T12:00:00`,
-    );
+    const transactionDate =
+      new Date(
+        `${date}T12:00:00`,
+      );
 
     if (
-      Number.isNaN(transactionDate.getTime())
+      Number.isNaN(
+        transactionDate.getTime(),
+      )
     ) {
       setError(
         "Enter a valid transaction date.",
@@ -177,24 +319,67 @@ const AddTransactionModal = ({
           FLOATING_POINT_TOLERANCE
     ) {
       setError(
-        `At this price, the maximum amount you can sell is ${formatCurrency(
+        `At this price, the maximum amount you can sell is ${formatCurrencyFor(
           maximumSellAmount,
+          "USD",
         )}.`,
       );
 
       return;
     }
 
-    const result = addTransaction({
-      type,
-      symbol,
-      amount: parsedAmount,
-      price: parsedPrice,
-      date: transactionDate.toISOString(),
-      note,
-    });
+    if (
+      type === "sell" &&
+      !cashAccountId
+    ) {
+      setError(
+        "Select a USD cash account that will receive the money from the sale.",
+      );
 
-    if (!result.success) {
+      return;
+    }
+
+    if (
+      type === "buy" &&
+      selectedCashAccount &&
+      parsedAmount >
+        selectedCashAccount.balance +
+          FLOATING_POINT_TOLERANCE
+    ) {
+      setError(
+        `The selected account only has ${formatCurrencyFor(
+          selectedCashAccount.balance,
+          "USD",
+        )} available.`,
+      );
+
+      return;
+    }
+
+    const result =
+      addTransaction({
+        type,
+        symbol,
+
+        amount:
+          parsedAmount,
+
+        price:
+          parsedPrice,
+
+        date:
+          transactionDate.toISOString(),
+
+        note,
+
+        cashAccountId:
+          cashAccountId ||
+          undefined,
+      });
+
+    if (
+      !result.success
+    ) {
       setError(
         result.error ??
           "Unable to record the transaction.",
@@ -204,11 +389,12 @@ const AddTransactionModal = ({
     }
 
     resetForm();
+
     onClose();
   };
 
   const stopPropagation = (
-    event: MouseEvent<HTMLDivElement>,
+    event: MouseEvent,
   ) => {
     event.stopPropagation();
   };
@@ -216,17 +402,19 @@ const AddTransactionModal = ({
   return (
     <div
       role="presentation"
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+      onMouseDown={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="transaction-modal-title"
-        onClick={stopPropagation}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+        onMouseDown={
+          stopPropagation
+        }
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-6">
           <div>
             <h2
               id="transaction-modal-title"
@@ -235,36 +423,44 @@ const AddTransactionModal = ({
               Record transaction
             </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Enter the amount invested or sold. JIS
-              calculates the shares automatically.
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Enter the amount
+              invested or sold. JIS
+              calculates the shares and
+              moves the cash
+              automatically.
             </p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close modal"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
           >
             ×
           </button>
         </div>
 
         <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-5"
+          onSubmit={
+            handleSubmit
+          }
+          className="space-y-5 p-6"
         >
           <div>
-            <span className="mb-2 block text-sm font-medium text-slate-700">
+            <p className="mb-2 text-sm font-medium text-slate-700">
               Transaction type
-            </span>
+            </p>
 
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-100 p-1">
+            <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
               <button
                 type="button"
                 onClick={() => {
                   setType("buy");
+
+                  setCashAccountId("");
+
                   setError("");
                 }}
                 className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
@@ -280,6 +476,7 @@ const AddTransactionModal = ({
                 type="button"
                 onClick={() => {
                   setType("sell");
+
                   setError("");
                 }}
                 className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
@@ -305,7 +502,9 @@ const AddTransactionModal = ({
               id="transaction-symbol"
               type="text"
               value={symbol}
-              onChange={(event) => {
+              onChange={(
+                event,
+              ) => {
                 setSymbol(
                   event.target.value.toUpperCase(),
                 );
@@ -319,73 +518,81 @@ const AddTransactionModal = ({
             />
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="transaction-amount"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Total amount
-              </label>
+          <div>
+            <label
+              htmlFor="transaction-amount"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Total amount
+            </label>
 
-              <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                  {currencySymbol}
-                </span>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                {usdSymbol}
+              </span>
 
-                <input
-                  id="transaction-amount"
-                  type="number"
-                  value={amount}
-                  onChange={(event) => {
-                    setAmount(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="1000.00"
-                  min="0"
-                  step="any"
-                  className="w-full rounded-xl border border-slate-200 py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
-            </div>
+              <input
+                id="transaction-amount"
+                type="number"
+                value={amount}
+                onChange={(
+                  event,
+                ) => {
+                  setAmount(
+                    event.target.value,
+                  );
 
-            <div>
-              <label
-                htmlFor="transaction-price"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Price per share
-              </label>
-
-              <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                  {currencySymbol}
-                </span>
-
-                <input
-                  id="transaction-price"
-                  type="number"
-                  value={price}
-                  onChange={(event) => {
-                    setPrice(event.target.value);
-                    setError("");
-                  }}
-                  placeholder="570.00"
-                  min="0"
-                  step="any"
-                  className="w-full rounded-xl border border-slate-200 py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                />
-              </div>
+                  setError("");
+                }}
+                placeholder="1000.00"
+                min="0"
+                step="any"
+                className="w-full rounded-xl border border-slate-200 py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div>
+            <label
+              htmlFor="transaction-price"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Price per share
+            </label>
+
+            <div className="relative">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                {usdSymbol}
+              </span>
+
+              <input
+                id="transaction-price"
+                type="number"
+                value={price}
+                onChange={(
+                  event,
+                ) => {
+                  setPrice(
+                    event.target.value,
+                  );
+
+                  setError("");
+                }}
+                placeholder="570.00"
+                min="0"
+                step="any"
+                className="w-full rounded-xl border border-slate-200 py-3 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm text-slate-500">
                 Calculated shares
               </span>
 
-              <span className="text-lg font-semibold text-slate-900">
+              <span className="text-sm font-semibold text-slate-900">
                 {sharesFormatter.format(
                   calculatedShares,
                 )}
@@ -394,13 +601,13 @@ const AddTransactionModal = ({
 
             {type === "sell" &&
               normalizedSymbol && (
-                <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-                  <div className="flex items-center justify-between gap-4 text-sm">
-                    <span className="text-slate-500">
+                <>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <span className="text-sm text-slate-500">
                       Available shares
                     </span>
 
-                    <span className="font-semibold text-slate-700">
+                    <span className="text-sm font-semibold text-slate-900">
                       {sharesFormatter.format(
                         currentShares,
                       )}
@@ -408,18 +615,129 @@ const AddTransactionModal = ({
                   </div>
 
                   {parsedPrice > 0 && (
-                    <div className="flex items-center justify-between gap-4 text-sm">
-                      <span className="text-slate-500">
-                        Maximum sale amount
+                    <div className="mt-3 flex items-center justify-between gap-4">
+                      <span className="text-sm text-slate-500">
+                        Maximum sale
                       </span>
 
-                      <span className="font-semibold text-slate-700">
-                        {formatCurrency(
+                      <span className="text-sm font-semibold text-slate-900">
+                        {formatCurrencyFor(
                           maximumSellAmount,
+                          "USD",
                         )}
                       </span>
                     </div>
                   )}
+                </>
+              )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="transaction-cash-account"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              {type === "sell"
+                ? "Cash destination"
+                : "Funding source"}
+            </label>
+
+            <select
+              id="transaction-cash-account"
+              value={
+                cashAccountId
+              }
+              onChange={(
+                event,
+              ) => {
+                setCashAccountId(
+                  event.target.value,
+                );
+
+                setError("");
+              }}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            >
+              {type === "buy" && (
+                <option value="">
+                  External contribution
+                  — new money
+                </option>
+              )}
+
+              {type === "sell" &&
+                usdCashAccounts.length ===
+                  0 && (
+                  <option value="">
+                    No USD cash account
+                    available
+                  </option>
+                )}
+
+              {usdCashAccounts.map(
+                (account) => (
+                  <option
+                    key={
+                      account.id
+                    }
+                    value={
+                      account.id
+                    }
+                  >
+                    {account.name} —{" "}
+                    {formatCurrencyFor(
+                      account.balance,
+                      "USD",
+                    )}
+                  </option>
+                ),
+              )}
+            </select>
+
+            {type === "buy" &&
+              !cashAccountId && (
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  External
+                  contribution means
+                  new money entering
+                  your JIS net worth.
+                </p>
+              )}
+
+            {type === "buy" &&
+              selectedCashAccount && (
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  JIS will deduct the
+                  purchase from{" "}
+                  {
+                    selectedCashAccount.name
+                  }
+                  .
+                </p>
+              )}
+
+            {type === "sell" &&
+              selectedCashAccount && (
+                <p className="mt-2 text-xs leading-5 text-slate-400">
+                  The sale proceeds
+                  will be deposited
+                  into{" "}
+                  {
+                    selectedCashAccount.name
+                  }
+                  .
+                </p>
+              )}
+
+            {type === "sell" &&
+              usdCashAccounts.length ===
+                0 && (
+                <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+                  Create a USD cash
+                  account in Portfolio
+                  → Cash accounts
+                  before recording a
+                  sale.
                 </div>
               )}
           </div>
@@ -436,8 +754,13 @@ const AddTransactionModal = ({
               id="transaction-date"
               type="date"
               value={date}
-              onChange={(event) => {
-                setDate(event.target.value);
+              onChange={(
+                event,
+              ) => {
+                setDate(
+                  event.target.value,
+                );
+
                 setError("");
               }}
               className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
@@ -445,21 +768,28 @@ const AddTransactionModal = ({
           </div>
 
           <div>
-            <label
-              htmlFor="transaction-note"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              Note
-              <span className="ml-1 font-normal text-slate-400">
+            <div className="mb-2 flex items-center justify-between gap-4">
+              <label
+                htmlFor="transaction-note"
+                className="text-sm font-medium text-slate-700"
+              >
+                Note
+              </label>
+
+              <span className="text-xs text-slate-400">
                 Optional
               </span>
-            </label>
+            </div>
 
             <textarea
               id="transaction-note"
               value={note}
-              onChange={(event) =>
-                setNote(event.target.value)
+              onChange={(
+                event,
+              ) =>
+                setNote(
+                  event.target.value,
+                )
               }
               placeholder="Monthly contribution"
               maxLength={160}
