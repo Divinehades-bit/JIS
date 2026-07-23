@@ -16,6 +16,17 @@ const currencyNames: Record<
   USD: "US Dollar",
   PEN: "Peruvian Sol",
   EUR: "Euro",
+  QAR: "Qatari Riyal",
+};
+
+const currencyLocales: Record<
+  CurrencyCode,
+  string
+> = {
+  USD: "en-US",
+  PEN: "es-PE",
+  EUR: "de-DE",
+  QAR: "en-QA",
 };
 
 const GeneralSettings = () => {
@@ -38,6 +49,7 @@ const GeneralSettings = () => {
     useState<CurrencyCode>(settings.currency);
 
   const [error, setError] = useState("");
+
   const [successMessage, setSuccessMessage] =
     useState("");
 
@@ -47,12 +59,15 @@ const GeneralSettings = () => {
   }, [settings]);
 
   const currencyPreview = useMemo(() => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(1000);
+    return new Intl.NumberFormat(
+      currencyLocales[currency],
+      {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      },
+    ).format(1000);
   }, [currency]);
 
   const handleSubmit = (
@@ -63,10 +78,12 @@ const GeneralSettings = () => {
     setError("");
     setSuccessMessage("");
 
-    const normalizedName = portfolioName.trim();
+    const normalizedName =
+      portfolioName.trim();
 
     if (!normalizedName) {
       setError("Portfolio name is required.");
+
       return;
     }
 
@@ -100,6 +117,7 @@ const GeneralSettings = () => {
     resetSettings();
 
     setError("");
+
     setSuccessMessage(
       "Preferences restored to their default values.",
     );
@@ -117,8 +135,9 @@ const GeneralSettings = () => {
         </h2>
 
         <p className="mt-2 text-sm text-slate-500">
-          Personalize the portfolio name and its primary
-          display currency.
+          Personalize the portfolio name and
+          select the reporting currency used
+          for converted cash balances.
         </p>
       </div>
 
@@ -139,7 +158,10 @@ const GeneralSettings = () => {
             type="text"
             value={portfolioName}
             onChange={(event) => {
-              setPortfolioName(event.target.value);
+              setPortfolioName(
+                event.target.value,
+              );
+
               setError("");
               setSuccessMessage("");
             }}
@@ -150,7 +172,8 @@ const GeneralSettings = () => {
 
           <div className="mt-1.5 flex items-center justify-between gap-4 text-xs text-slate-400">
             <span>
-              This name appears on Dashboard and Portfolio.
+              This name appears throughout
+              JIS.
             </span>
 
             <span>
@@ -164,7 +187,7 @@ const GeneralSettings = () => {
             htmlFor="settings-currency"
             className="mb-2 block text-sm font-medium text-slate-700"
           >
-            Primary currency
+            Reporting currency
           </label>
 
           <select
@@ -172,7 +195,8 @@ const GeneralSettings = () => {
             value={currency}
             onChange={(event) => {
               setCurrency(
-                event.target.value as CurrencyCode,
+                event.target
+                  .value as CurrencyCode,
               );
 
               setError("");
@@ -202,10 +226,11 @@ const GeneralSettings = () => {
               {currencyPreview}
             </p>
 
-            <p className="mt-1 text-xs text-slate-500">
-              Changing currency changes the display
-              preference; it does not convert existing
-              amounts.
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Cash accounts will retain their
+              original currency and also show
+              their equivalent in this reporting
+              currency.
             </p>
           </div>
         </div>

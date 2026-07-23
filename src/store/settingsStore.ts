@@ -4,6 +4,7 @@ export const supportedCurrencies = [
   "USD",
   "PEN",
   "EUR",
+  "QAR",
 ] as const;
 
 export type CurrencyCode =
@@ -40,7 +41,7 @@ const isRecord = (
   return typeof value === "object" && value !== null;
 };
 
-const isCurrencyCode = (
+export const isSupportedCurrency = (
   value: unknown,
 ): value is CurrencyCode => {
   return (
@@ -63,7 +64,9 @@ export const normalizeAppSettings = (
       ? value.portfolioName.trim()
       : "";
 
-  const currency = isCurrencyCode(value.currency)
+  const currency = isSupportedCurrency(
+    value.currency,
+  )
     ? value.currency
     : null;
 
@@ -118,6 +121,7 @@ const loadSettings = (): AppSettings => {
 
     if (!savedSettings) {
       saveSettingsToStorage(DEFAULT_SETTINGS);
+
       return DEFAULT_SETTINGS;
     }
 
@@ -129,6 +133,7 @@ const loadSettings = (): AppSettings => {
 
     if (!normalizedSettings) {
       saveSettingsToStorage(DEFAULT_SETTINGS);
+
       return DEFAULT_SETTINGS;
     }
 
@@ -156,7 +161,7 @@ const useSettingsStore = create<SettingsStore>(
       if (
         !portfolioName ||
         portfolioName.length > 40 ||
-        !isCurrencyCode(input.currency)
+        !isSupportedCurrency(input.currency)
       ) {
         console.error(
           "Invalid JIS settings:",

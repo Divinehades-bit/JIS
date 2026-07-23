@@ -1,4 +1,5 @@
 import { useState } from "react";
+import CashManager from "../components/cash/CashManager";
 import AddTransactionModal from "../components/portfolio/AddTransactionModal";
 import PortfolioAllocationChart from "../components/portfolio/PortfolioAllocationChart";
 import PortfolioSummary from "../components/portfolio/PortfolioSummary";
@@ -7,7 +8,8 @@ import PortfolioToolbar from "../components/portfolio/PortfolioToolbar";
 import TransactionHistory from "../components/portfolio/TransactionHistory";
 
 const Portfolio = () => {
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] =
+    useState("");
 
   const [
     isTransactionModalOpen,
@@ -29,7 +31,11 @@ const Portfolio = () => {
 
         <PortfolioAllocationChart />
 
-        <PortfolioTable searchTerm={searchTerm} />
+        <PortfolioTable
+          searchTerm={searchTerm}
+        />
+
+        <CashManager />
 
         <TransactionHistory
           searchTerm={searchTerm}
