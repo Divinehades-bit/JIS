@@ -30,7 +30,6 @@ export type Transaction = {
   date: string;
   note?: string;
   realizedGainLoss?: number;
-
   cashAccountId?: string;
   cashAccountName?: string;
 };
@@ -42,15 +41,6 @@ export type AddTransactionInput = {
   price: number;
   date: string;
   note?: string;
-
-  /*
-   * BUY:
-   * undefined = external contribution
-   * id = money comes from cash account
-   *
-   * SELL:
-   * id = sale proceeds go to cash account
-   */
   cashAccountId?: string;
 };
 
@@ -98,6 +88,11 @@ type PortfolioStore = {
     transaction: AddTransactionInput,
   ) => TransactionResult;
 
+  reconcileSellCash: (
+    transactionId: string,
+    cashAccountId: string,
+  ) => TransactionResult;
+
   refreshMarketPrices:
     () => Promise<MarketPriceRefreshResult>;
 };
@@ -140,10 +135,7 @@ const defaultPositions: Position[] = [
 
 const isRecord = (
   value: unknown,
-): value is Record<
-  string,
-  unknown
-> => {
+): value is Record<string, unknown> => {
   return (
     typeof value === "object" &&
     value !== null
@@ -159,9 +151,7 @@ const normalizePositiveNumber = (
       : Number(value);
 
   if (
-    !Number.isFinite(
-      parsedValue,
-    ) ||
+    !Number.isFinite(parsedValue) ||
     parsedValue <= 0
   ) {
     return null;
@@ -178,9 +168,7 @@ const normalizeFiniteNumber = (
       ? value
       : Number(value);
 
-  return Number.isFinite(
-    parsedValue,
-  )
+  return Number.isFinite(parsedValue)
     ? parsedValue
     : null;
 };
@@ -188,9 +176,7 @@ const normalizeFiniteNumber = (
 const normalizeIsoDate = (
   value: unknown,
 ): string | undefined => {
-  if (
-    typeof value !== "string"
-  ) {
+  if (typeof value !== "string") {
     return undefined;
   }
 
@@ -251,8 +237,7 @@ const normalizePosition = (
     );
 
   const symbol =
-    typeof value.symbol ===
-    "string"
+    typeof value.symbol === "string"
       ? value.symbol
           .trim()
           .toUpperCase()
@@ -291,14 +276,13 @@ const normalizeTransaction = (
 
   const validTypes:
     TransactionType[] = [
-    "opening",
-    "buy",
-    "sell",
-  ];
+      "opening",
+      "buy",
+      "sell",
+    ];
 
   const type =
-    typeof value.type ===
-      "string" &&
+    typeof value.type === "string" &&
     validTypes.includes(
       value.type as TransactionType,
     )
@@ -306,16 +290,13 @@ const normalizeTransaction = (
       : null;
 
   const id =
-    typeof value.id ===
-      "string" ||
-    typeof value.id ===
-      "number"
+    typeof value.id === "string" ||
+    typeof value.id === "number"
       ? String(value.id)
       : "";
 
   const symbol =
-    typeof value.symbol ===
-    "string"
+    typeof value.symbol === "string"
       ? value.symbol
           .trim()
           .toUpperCase()
@@ -344,8 +325,7 @@ const normalizeTransaction = (
     );
 
   const date =
-    typeof value.date ===
-    "string"
+    typeof value.date === "string"
       ? value.date
       : "";
 
@@ -368,8 +348,7 @@ const normalizeTransaction = (
   }
 
   const note =
-    typeof value.note ===
-      "string" &&
+    typeof value.note === "string" &&
     value.note.trim()
       ? value.note.trim()
       : undefined;
@@ -1145,7 +1124,6 @@ const usePortfolioStore =
         if (!symbol) {
           return {
             success: false,
-
             error:
               "Symbol is required.",
           };
@@ -1156,7 +1134,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Amount must be greater than zero.",
           };
@@ -1167,7 +1144,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Price must be greater than zero.",
           };
@@ -1180,7 +1156,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Enter a valid transaction date.",
           };
@@ -1197,7 +1172,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Unable to calculate the shares.",
           };
@@ -1242,10 +1216,6 @@ const usePortfolioStore =
           matchingPositions[0] ??
           null;
 
-        /*
-         * Validate the selected
-         * USD cash account.
-         */
         const cashAccount =
           input.cashAccountId
             ? useCashStore
@@ -1263,7 +1233,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "The selected cash account no longer exists.",
           };
@@ -1276,7 +1245,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Investment transactions currently require a USD cash account.",
           };
@@ -1288,7 +1256,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "Select the USD cash account that will receive the sale proceeds.",
           };
@@ -1303,7 +1270,6 @@ const usePortfolioStore =
         ) {
           return {
             success: false,
-
             error:
               "The selected cash account does not have enough available balance.",
           };
@@ -1363,7 +1329,6 @@ const usePortfolioStore =
           ) {
             return {
               success: false,
-
               error: `You do not own any shares of ${symbol}.`,
             };
           }
@@ -1375,7 +1340,6 @@ const usePortfolioStore =
           ) {
             return {
               success: false,
-
               error:
                 "The sale exceeds the available shares.",
             };
@@ -1430,18 +1394,6 @@ const usePortfolioStore =
           }
         }
 
-        /*
-         * Move the actual money.
-         *
-         * BUY + cash account:
-         * cash decreases.
-         *
-         * BUY + no cash account:
-         * external contribution.
-         *
-         * SELL:
-         * selected cash account increases.
-         */
         if (cashAccount) {
           const cashMovement =
             input.type === "buy"
@@ -1549,6 +1501,126 @@ const usePortfolioStore =
         };
       },
 
+      reconcileSellCash: (
+        transactionId,
+        cashAccountId,
+      ) => {
+        const state = get();
+
+        const transaction =
+          state.transactions.find(
+            (item) =>
+              item.id ===
+              transactionId,
+          );
+
+        if (!transaction) {
+          return {
+            success: false,
+            error:
+              "Transaction not found.",
+          };
+        }
+
+        if (
+          transaction.type !==
+          "sell"
+        ) {
+          return {
+            success: false,
+            error:
+              "Only sales can be reconciled.",
+          };
+        }
+
+        if (
+          transaction.cashAccountId
+        ) {
+          return {
+            success: false,
+            error:
+              "This sale already has a cash destination.",
+          };
+        }
+
+        const cashAccount =
+          useCashStore
+            .getState()
+            .accounts.find(
+              (account) =>
+                account.id ===
+                cashAccountId,
+            );
+
+        if (!cashAccount) {
+          return {
+            success: false,
+            error:
+              "Cash account not found.",
+          };
+        }
+
+        if (
+          cashAccount.currency !==
+          "USD"
+        ) {
+          return {
+            success: false,
+            error:
+              "Historical investment sales must be reconciled to a USD cash account.",
+          };
+        }
+
+        const cashResult =
+          useCashStore
+            .getState()
+            .adjustAccountBalance(
+              cashAccount.id,
+              transaction.amount,
+            );
+
+        if (
+          !cashResult.success
+        ) {
+          return {
+            success: false,
+            error:
+              cashResult.error ??
+              "Unable to update the cash account.",
+          };
+        }
+
+        const nextTransactions =
+          state.transactions.map(
+            (item) =>
+              item.id ===
+              transactionId
+                ? {
+                    ...item,
+
+                    cashAccountId:
+                      cashAccount.id,
+
+                    cashAccountName:
+                      cashAccount.name,
+                  }
+                : item,
+          );
+
+        saveTransactions(
+          nextTransactions,
+        );
+
+        set({
+          transactions:
+            nextTransactions,
+        });
+
+        return {
+          success: true,
+        };
+      },
+
       refreshMarketPrices:
         async () => {
           if (
@@ -1558,13 +1630,9 @@ const usePortfolioStore =
           ) {
             return {
               success: false,
-
               updatedSymbols: [],
-
               deferredSymbols: [],
-
               errors: {},
-
               error:
                 "A price update is already running.",
             };
@@ -1598,13 +1666,9 @@ const usePortfolioStore =
 
             return {
               success: false,
-
               updatedSymbols: [],
-
               deferredSymbols: [],
-
               errors: {},
-
               error,
             };
           }
@@ -1749,13 +1813,9 @@ const usePortfolioStore =
 
             return {
               success: false,
-
               updatedSymbols: [],
-
               deferredSymbols,
-
               errors: {},
-
               error:
                 message,
             };

@@ -10,18 +10,29 @@ type TransactionHistoryProps = {
   searchTerm?: string;
 };
 
-const sharesFormatter = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 6,
-});
+const sharesFormatter =
+  new Intl.NumberFormat(
+    "en-US",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 6,
+    },
+  );
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
+const dateFormatter =
+  new Intl.DateTimeFormat(
+    "en-US",
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
-const transactionLabels: Record<TransactionType, string> = {
+const transactionLabels: Record<
+  TransactionType,
+  string
+> = {
   opening: "Opening",
   buy: "Buy",
   sell: "Sell",
@@ -44,70 +55,157 @@ const getTransactionBadgeClassName = (
 const TransactionHistory = ({
   searchTerm = "",
 }: TransactionHistoryProps) => {
-  const transactions = usePortfolioStore(
-    (state) => state.transactions,
-  );
+  const transactions =
+    usePortfolioStore(
+      (state) =>
+        state.transactions,
+    );
 
-  const cashAccounts = useCashStore(
-    (state) => state.accounts,
-  );
+  const reconcileSellCash =
+    usePortfolioStore(
+      (state) =>
+        state.reconcileSellCash,
+    );
+
+  const cashAccounts =
+    useCashStore(
+      (state) =>
+        state.accounts,
+    );
 
   const {
     formatCurrencyFor,
   } = useCurrencyFormatter();
 
-  const filteredTransactions = useMemo(() => {
-    const normalizedSearchTerm = searchTerm
-      .trim()
-      .toUpperCase();
-
-    const matchingTransactions =
-      normalizedSearchTerm.length > 0
-        ? transactions.filter((transaction) =>
-            transaction.symbol.includes(
-              normalizedSearchTerm,
-            ),
-          )
-        : transactions;
-
-    return [...matchingTransactions].sort(
-      (
-        firstTransaction,
-        secondTransaction,
-      ) =>
-        new Date(
-          secondTransaction.date,
-        ).getTime() -
-        new Date(
-          firstTransaction.date,
-        ).getTime(),
+  const usdCashAccounts =
+    useMemo(
+      () =>
+        cashAccounts.filter(
+          (account) =>
+            account.currency ===
+            "USD",
+        ),
+      [cashAccounts],
     );
-  }, [transactions, searchTerm]);
+
+  const filteredTransactions =
+    useMemo(() => {
+      const normalizedSearchTerm =
+        searchTerm
+          .trim()
+          .toUpperCase();
+
+      const matchingTransactions =
+        normalizedSearchTerm.length >
+        0
+          ? transactions.filter(
+              (transaction) =>
+                transaction.symbol.includes(
+                  normalizedSearchTerm,
+                ),
+            )
+          : transactions;
+
+      return [
+        ...matchingTransactions,
+      ].sort(
+        (
+          firstTransaction,
+          secondTransaction,
+        ) =>
+          new Date(
+            secondTransaction.date,
+          ).getTime() -
+          new Date(
+            firstTransaction.date,
+          ).getTime(),
+      );
+    }, [
+      transactions,
+      searchTerm,
+    ]);
 
   const getCashAccountName = (
     transaction: Transaction,
   ) => {
-    if (transaction.cashAccountName) {
+    if (
+      transaction.cashAccountName
+    ) {
       return transaction.cashAccountName;
     }
 
-    if (!transaction.cashAccountId) {
+    if (
+      !transaction.cashAccountId
+    ) {
       return null;
     }
 
-    const account = cashAccounts.find(
-      (item) =>
-        item.id ===
-        transaction.cashAccountId,
-    );
+    const account =
+      cashAccounts.find(
+        (item) =>
+          item.id ===
+          transaction.cashAccountId,
+      );
 
     return account?.name ?? null;
+  };
+
+  const handleReconcile = (
+    transaction: Transaction,
+    cashAccountId: string,
+  ) => {
+    if (!cashAccountId) {
+      return;
+    }
+
+    const cashAccount =
+      usdCashAccounts.find(
+        (account) =>
+          account.id ===
+          cashAccountId,
+      );
+
+    if (!cashAccount) {
+      window.alert(
+        "Cash account not found.",
+      );
+
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Deposit ${formatCurrencyFor(
+          transaction.amount,
+          "USD",
+        )} from the ${transaction.symbol} sale into ${cashAccount.name}?\n\nThis will increase the cash account balance by the full sale proceeds.`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const result =
+      reconcileSellCash(
+        transaction.id,
+        cashAccount.id,
+      );
+
+    if (!result.success) {
+      window.alert(
+        result.error ??
+          "Unable to reconcile the sale.",
+      );
+    }
   };
 
   const renderCashMovement = (
     transaction: Transaction,
   ) => {
-    if (transaction.type === "opening") {
+    if (
+      transaction.type ===
+      "opening"
+    ) {
       return (
         <span className="text-slate-400">
           —
@@ -116,10 +214,13 @@ const TransactionHistory = ({
     }
 
     const cashAccountName =
-      getCashAccountName(transaction);
+      getCashAccountName(
+        transaction,
+      );
 
     if (
-      transaction.type === "buy" &&
+      transaction.type ===
+        "buy" &&
       !cashAccountName
     ) {
       return (
@@ -135,6 +236,67 @@ const TransactionHistory = ({
       );
     }
 
+    if (
+      transaction.type ===
+        "sell" &&
+      !cashAccountName
+    ) {
+      if (
+        usdCashAccounts.length ===
+        0
+      ) {
+        return (
+          <div>
+            <p className="text-xs font-semibold text-amber-600">
+              Unassigned sale
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Create a USD cash account
+            </p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-w-44">
+          <p className="mb-1.5 text-xs font-semibold text-amber-600">
+            Unassigned sale
+          </p>
+
+          <select
+            value=""
+            onChange={(event) =>
+              handleReconcile(
+                transaction,
+                event.target.value,
+              )
+            }
+            className="w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-medium text-slate-700 outline-none transition focus:border-amber-400"
+          >
+            <option value="">
+              Move proceeds to...
+            </option>
+
+            {usdCashAccounts.map(
+              (account) => (
+                <option
+                  key={
+                    account.id
+                  }
+                  value={
+                    account.id
+                  }
+                >
+                  {account.name}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+      );
+    }
+
     if (!cashAccountName) {
       return (
         <span className="text-slate-400">
@@ -143,18 +305,21 @@ const TransactionHistory = ({
       );
     }
 
-    if (transaction.type === "sell") {
+    if (
+      transaction.type ===
+      "sell"
+    ) {
       return (
         <div>
           <p className="text-sm font-semibold text-emerald-600">
-            +{" "}
+            +
             {formatCurrencyFor(
               transaction.amount,
               "USD",
             )}
           </p>
 
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs font-medium text-slate-500">
             → {cashAccountName}
           </p>
         </div>
@@ -164,14 +329,14 @@ const TransactionHistory = ({
     return (
       <div>
         <p className="text-sm font-semibold text-red-600">
-          −{" "}
+          −
           {formatCurrencyFor(
             transaction.amount,
             "USD",
           )}
         </p>
 
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs font-medium text-slate-500">
           ← {cashAccountName}
         </p>
       </div>
@@ -182,7 +347,8 @@ const TransactionHistory = ({
     transaction: Transaction,
   ) => {
     if (
-      transaction.type !== "sell" ||
+      transaction.type !==
+        "sell" ||
       transaction.realizedGainLoss ===
         undefined
     ) {
@@ -227,13 +393,14 @@ const TransactionHistory = ({
         </h2>
 
         <p className="mt-1 text-sm text-slate-500">
-          Purchases, sales and the cash
-          account used for every investment
-          movement.
+          Purchases, sales and the
+          cash account used for every
+          investment movement.
         </p>
       </div>
 
-      {filteredTransactions.length === 0 ? (
+      {filteredTransactions.length ===
+      0 ? (
         <div className="flex min-h-56 items-center justify-center p-8 text-center">
           <div>
             <h3 className="font-semibold text-slate-900">
@@ -241,14 +408,15 @@ const TransactionHistory = ({
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              Record a purchase or sale to
-              begin your history.
+              Record a purchase or
+              sale to begin your
+              history.
             </p>
           </div>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-[1180px] w-full">
+          <table className="min-w-[1220px] w-full">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -293,7 +461,9 @@ const TransactionHistory = ({
               {filteredTransactions.map(
                 (transaction) => (
                   <tr
-                    key={transaction.id}
+                    key={
+                      transaction.id
+                    }
                     className="transition hover:bg-slate-50"
                   >
                     <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600">
@@ -319,7 +489,9 @@ const TransactionHistory = ({
                     </td>
 
                     <td className="px-5 py-4 text-sm font-bold text-slate-900">
-                      {transaction.symbol}
+                      {
+                        transaction.symbol
+                      }
                     </td>
 
                     <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-slate-900">
@@ -355,7 +527,8 @@ const TransactionHistory = ({
                     </td>
 
                     <td className="max-w-56 px-5 py-4 text-sm text-slate-500">
-                      {transaction.note ?? "—"}
+                      {transaction.note ??
+                        "—"}
                     </td>
                   </tr>
                 ),
