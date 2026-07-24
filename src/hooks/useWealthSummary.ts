@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import useCashStore from "../store/cashStore";
+import useDividendStore from "../store/dividendStore";
 import usePortfolioStore from "../store/portfolioStore";
 import useSettingsStore, {
   type CurrencyCode,
@@ -41,6 +42,10 @@ const useWealthSummary = () => {
     (state) => state.transactions,
   );
 
+  const dividendRecords = useDividendStore(
+    (state) => state.records,
+  );
+
   const accounts = useCashStore(
     (state) => state.accounts,
   );
@@ -59,8 +64,8 @@ const useWealthSummary = () => {
 
   return useMemo(() => {
     /*
-     * Investments in JIS are currently
-     * treated as USD-denominated.
+     * JIS currently treats all investment
+     * securities as USD-denominated.
      */
     const investmentCurrentValueUsd =
       positions.reduce(
@@ -81,7 +86,7 @@ const useWealthSummary = () => {
       );
 
     /*
-     * Profit/loss still inside the
+     * Profit or loss still inside
      * positions currently held.
      */
     const investmentGainLossUsd =
@@ -96,8 +101,8 @@ const useWealthSummary = () => {
         : 0;
 
     /*
-     * Profit/loss already locked in
-     * through completed sales.
+     * Profit or loss already realized
+     * through completed investment sales.
      */
     const realizedTransactions =
       transactions.filter(
@@ -120,15 +125,47 @@ const useWealthSummary = () => {
       );
 
     /*
-     * Complete investment profit:
+     * Dividend income.
      *
-     * unrealized
-     * +
-     * realized
+     * Gross dividend
+     * - withholding tax
+     * = net dividend received
+     */
+    const grossDividendsUsd =
+      dividendRecords.reduce(
+        (total, dividend) =>
+          total +
+          dividend.grossAmount,
+        0,
+      );
+
+    const dividendTaxUsd =
+      dividendRecords.reduce(
+        (total, dividend) =>
+          total +
+          dividend.taxWithheld,
+        0,
+      );
+
+    const netDividendsUsd =
+      dividendRecords.reduce(
+        (total, dividend) =>
+          total +
+          dividend.netAmount,
+        0,
+      );
+
+    /*
+     * Complete investment profit.
+     *
+     * Unrealized profit
+     * + realized profit
+     * + net dividends
      */
     const totalInvestmentProfitUsd =
       investmentGainLossUsd +
-      realizedGainLossUsd;
+      realizedGainLossUsd +
+      netDividendsUsd;
 
     const usdToBaseRate =
       getValidRate(
@@ -162,16 +199,35 @@ const useWealthSummary = () => {
         : realizedGainLossUsd *
           usdToBaseRate;
 
+    const grossDividends =
+      usdToBaseRate === null
+        ? null
+        : grossDividendsUsd *
+          usdToBaseRate;
+
+    const dividendTax =
+      usdToBaseRate === null
+        ? null
+        : dividendTaxUsd *
+          usdToBaseRate;
+
+    const netDividends =
+      usdToBaseRate === null
+        ? null
+        : netDividendsUsd *
+          usdToBaseRate;
+
     const totalInvestmentProfit =
       usdToBaseRate === null
         ? null
         : totalInvestmentProfitUsd *
           usdToBaseRate;
 
+    /*
+     * Cash accounts.
+     */
     let totalCash = 0;
-
     let annualCashIncome = 0;
-
     let missingFxAccountCount = 0;
 
     const cashByCurrency =
@@ -199,8 +255,7 @@ const useWealthSummary = () => {
 
       totalCash += convertedBalance;
 
-      annualCashIncome +=
-        annualIncome;
+      annualCashIncome += annualIncome;
 
       cashByCurrency.set(
         account.currency,
@@ -228,6 +283,13 @@ const useWealthSummary = () => {
       !investmentFxMissing &&
       missingFxAccountCount === 0;
 
+    /*
+     * Net worth already contains dividend
+     * cash because net dividends are
+     * deposited into a cash account.
+     *
+     * Do NOT add dividends again here.
+     */
     const netWorth =
       investmentCurrentValue === null
         ? null
@@ -283,6 +345,11 @@ const useWealthSummary = () => {
 
       investmentGainLossUsd,
       realizedGainLossUsd,
+
+      grossDividendsUsd,
+      dividendTaxUsd,
+      netDividendsUsd,
+
       totalInvestmentProfitUsd,
 
       investmentCurrentValue,
@@ -290,6 +357,11 @@ const useWealthSummary = () => {
 
       investmentGainLoss,
       realizedGainLoss,
+
+      grossDividends,
+      dividendTax,
+      netDividends,
+
       totalInvestmentProfit,
 
       investmentReturn,
@@ -318,11 +390,15 @@ const useWealthSummary = () => {
       realizedSaleCount:
         realizedTransactions.length,
 
+      dividendPaymentCount:
+        dividendRecords.length,
+
       currencyBreakdown,
     };
   }, [
     accounts,
     baseCurrency,
+    dividendRecords,
     fxBaseCurrency,
     fxRates,
     positions,

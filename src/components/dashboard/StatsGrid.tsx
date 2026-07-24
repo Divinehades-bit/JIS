@@ -52,7 +52,10 @@ const StatCard = ({
 const getPerformanceClassName = (
   value: number | null,
 ) => {
-  if (value === null || value === 0) {
+  if (
+    value === null ||
+    value === 0
+  ) {
     return "text-slate-900";
   }
 
@@ -175,7 +178,7 @@ const StatsGrid = () => {
         valueClassName={getPerformanceClassName(
           summary.totalInvestmentProfit,
         )}
-        description="Realized profit plus unrealized profit from current positions."
+        description="Unrealized + realized + net dividends."
         icon={
           <span className="text-base font-bold">
             Σ
@@ -252,6 +255,26 @@ const StatsGrid = () => {
       />
 
       <StatCard
+        title="Net dividends"
+        value={formatOptionalSignedCurrency(
+          summary.netDividends,
+        )}
+        valueClassName={getPerformanceClassName(
+          summary.netDividends,
+        )}
+        description={`${summary.dividendPaymentCount} ${
+          summary.dividendPaymentCount === 1
+            ? "payment"
+            : "payments"
+        } after withholding tax.`}
+        icon={
+          <span className="text-base font-bold">
+            D
+          </span>
+        }
+      />
+
+      <StatCard
         title="Cash annual income"
         value={formatCurrency(
           summary.annualCashIncome,
@@ -259,7 +282,7 @@ const StatsGrid = () => {
         valueClassName="text-emerald-600"
         description={`${formatCurrency(
           summary.monthlyCashIncome,
-        )} estimated average per month.`}
+        )} estimated average per month from cash yield.`}
         icon={
           <svg
             viewBox="0 0 24 24"
@@ -272,45 +295,6 @@ const StatsGrid = () => {
               strokeLinecap="round"
               strokeLinejoin="round"
               d="M12 3v18M16 7.5c0-1.4-1.8-2.5-4-2.5S8 6.1 8 7.5 9.8 10 12 10s4 1.1 4 2.5S14.2 15 12 15s-4-1.1-4-2.5"
-            />
-          </svg>
-        }
-      />
-
-      <StatCard
-        title="Cash annual yield"
-        value={`${percentageFormatter.format(
-          summary.cashWeightedYield,
-        )}%`}
-        description={`Weighted yield across ${summary.cashAccountCount} cash ${
-          summary.cashAccountCount === 1
-            ? "account"
-            : "accounts"
-        }.`}
-        icon={
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className="h-5 w-5"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M7 17 17 7"
-            />
-
-            <circle
-              cx="7"
-              cy="7"
-              r="2"
-            />
-
-            <circle
-              cx="17"
-              cy="17"
-              r="2"
             />
           </svg>
         }

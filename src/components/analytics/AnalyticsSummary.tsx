@@ -49,40 +49,58 @@ const SummaryCard = ({
   );
 };
 
+const getPerformanceClassName = (
+  value: number | null,
+) => {
+  if (
+    value === null ||
+    value === 0
+  ) {
+    return "text-slate-900";
+  }
+
+  return value > 0
+    ? "text-emerald-600"
+    : "text-red-600";
+};
+
 const AnalyticsSummary = () => {
   const {
     formatCurrency,
     formatSignedCurrency,
   } = useCurrencyFormatter();
 
-  const summary = useWealthSummary();
-
-  const investmentPerformanceClass =
-    summary.investmentGainLoss !== null &&
-    summary.investmentGainLoss > 0
-      ? "text-emerald-600"
-      : summary.investmentGainLoss !== null &&
-          summary.investmentGainLoss < 0
-        ? "text-red-600"
-        : "text-slate-900";
+  const summary =
+    useWealthSummary();
 
   const netWorth =
     summary.netWorth === null
       ? "FX pending"
-      : formatCurrency(summary.netWorth);
+      : formatCurrency(
+          summary.netWorth,
+        );
 
   const investments =
-    summary.investmentCurrentValue === null
+    summary.investmentCurrentValue ===
+    null
       ? "FX pending"
       : formatCurrency(
           summary.investmentCurrentValue,
         );
 
-  const investmentGainLoss =
-    summary.investmentGainLoss === null
+  const totalInvestmentProfit =
+    summary.totalInvestmentProfit ===
+    null
       ? "FX pending"
       : formatSignedCurrency(
-          summary.investmentGainLoss,
+          summary.totalInvestmentProfit,
+        );
+
+  const netDividends =
+    summary.netDividends === null
+      ? "FX pending"
+      : formatSignedCurrency(
+          summary.netDividends,
         );
 
   return (
@@ -111,7 +129,7 @@ const AnalyticsSummary = () => {
       <SummaryCard
         title="Investments"
         value={investments}
-        description={`${summary.positionCount} market positions currently tracked.`}
+        description={`${summary.positionCount} market positions currently held.`}
         icon={
           <svg
             viewBox="0 0 24 24"
@@ -163,38 +181,34 @@ const AnalyticsSummary = () => {
       />
 
       <SummaryCard
-        title="Investment gain / loss"
-        value={investmentGainLoss}
-        valueClassName={
-          investmentPerformanceClass
-        }
-        description={`Unrealized investment return: ${
-          summary.investmentReturn > 0
-            ? "+"
-            : ""
-        }${percentageFormatter.format(
-          summary.investmentReturn,
-        )}%.`}
+        title="Total investment profit"
+        value={totalInvestmentProfit}
+        valueClassName={getPerformanceClassName(
+          summary.totalInvestmentProfit,
+        )}
+        description="Unrealized + realized + net dividend income."
         icon={
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className="h-5 w-5"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="m4 16 5-5 4 4 7-8"
-            />
+          <span className="font-bold">
+            Σ
+          </span>
+        }
+      />
 
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 7h5v5"
-            />
-          </svg>
+      <SummaryCard
+        title="Net dividends"
+        value={netDividends}
+        valueClassName={getPerformanceClassName(
+          summary.netDividends,
+        )}
+        description={`${formatCurrency(
+          summary.grossDividends ?? 0,
+        )} gross · ${formatCurrency(
+          summary.dividendTax ?? 0,
+        )} withheld.`}
+        icon={
+          <span className="font-bold">
+            D
+          </span>
         }
       />
 
@@ -206,7 +220,7 @@ const AnalyticsSummary = () => {
         valueClassName="text-emerald-600"
         description={`${formatCurrency(
           summary.monthlyCashIncome,
-        )} estimated average per month.`}
+        )} estimated average per month from cash yield.`}
         icon={
           <svg
             viewBox="0 0 24 24"
@@ -219,45 +233,6 @@ const AnalyticsSummary = () => {
               strokeLinecap="round"
               strokeLinejoin="round"
               d="M12 3v18M16 7.5c0-1.4-1.8-2.5-4-2.5S8 6.1 8 7.5 9.8 10 12 10s4 1.1 4 2.5S14.2 15 12 15s-4-1.1-4-2.5"
-            />
-          </svg>
-        }
-      />
-
-      <SummaryCard
-        title="Cash annual yield"
-        value={`${percentageFormatter.format(
-          summary.cashWeightedYield,
-        )}%`}
-        description={`Weighted return across ${summary.cashAccountCount} cash ${
-          summary.cashAccountCount === 1
-            ? "account"
-            : "accounts"
-        }.`}
-        icon={
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className="h-5 w-5"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M7 17 17 7"
-            />
-
-            <circle
-              cx="7"
-              cy="7"
-              r="2"
-            />
-
-            <circle
-              cx="17"
-              cy="17"
-              r="2"
             />
           </svg>
         }
