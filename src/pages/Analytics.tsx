@@ -2,6 +2,7 @@ import AnalyticsSummary from "../components/analytics/AnalyticsSummary";
 import CashPerformance from "../components/analytics/CashPerformance";
 import HoldingPerformance from "../components/analytics/HoldingPerformance";
 import MonthlyCashFlowChart from "../components/analytics/MonthlyCashFlowChart";
+import RealizedGains from "../components/analytics/RealizedGains";
 import WealthAnalysis from "../components/analytics/WealthAnalysis";
 
 const Analytics = () => {
@@ -18,9 +19,9 @@ const Analytics = () => {
 
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
           Analyze your complete JIS wealth:
-          investments, cash, annual income,
-          allocation and individual asset
-          performance.
+          investments, cash, realized and unrealized
+          performance, annual income and asset
+          allocation.
         </p>
       </section>
 
@@ -31,6 +32,8 @@ const Analytics = () => {
 
         <MonthlyCashFlowChart />
       </section>
+
+      <RealizedGains />
 
       <CashPerformance />
 
