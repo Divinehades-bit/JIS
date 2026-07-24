@@ -1,5 +1,6 @@
 import GoalForm from "../components/goals/GoalForm";
 import GoalOverview from "../components/goals/GoalOverview";
+import GoalProjectionChart from "../components/goals/GoalProjectionChart";
 
 const Goals = () => {
   return (
@@ -18,9 +19,9 @@ const Goals = () => {
           your complete JIS net worth:
           investments plus cash.
           Compare conservative, base
-          and optimistic return
-          scenarios and calculate the
-          monthly investment required.
+          and optimistic scenarios and
+          visualize your path toward
+          financial independence.
         </p>
       </section>
 
@@ -29,6 +30,8 @@ const Goals = () => {
 
         <GoalOverview />
       </section>
+
+      <GoalProjectionChart />
     </div>
   );
 };
