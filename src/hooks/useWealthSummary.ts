@@ -37,6 +37,10 @@ const useWealthSummary = () => {
     (state) => state.positions,
   );
 
+  const transactions = usePortfolioStore(
+    (state) => state.transactions,
+  );
+
   const accounts = useCashStore(
     (state) => state.accounts,
   );
@@ -55,14 +59,15 @@ const useWealthSummary = () => {
 
   return useMemo(() => {
     /*
-     * Securities currently tracked by JIS
-     * are treated as USD-denominated.
+     * Investments in JIS are currently
+     * treated as USD-denominated.
      */
     const investmentCurrentValueUsd =
       positions.reduce(
         (total, position) =>
           total +
-          position.shares * position.price,
+          position.shares *
+            position.price,
         0,
       );
 
@@ -75,6 +80,10 @@ const useWealthSummary = () => {
         0,
       );
 
+    /*
+     * Profit/loss still inside the
+     * positions currently held.
+     */
     const investmentGainLossUsd =
       investmentCurrentValueUsd -
       investmentCostUsd;
@@ -86,12 +95,48 @@ const useWealthSummary = () => {
           100
         : 0;
 
-    const usdToBaseRate = getValidRate(
-      "USD",
-      baseCurrency,
-      fxBaseCurrency,
-      fxRates,
-    );
+    /*
+     * Profit/loss already locked in
+     * through completed sales.
+     */
+    const realizedTransactions =
+      transactions.filter(
+        (transaction) =>
+          transaction.type === "sell" &&
+          transaction.realizedGainLoss !==
+            undefined &&
+          Number.isFinite(
+            transaction.realizedGainLoss,
+          ),
+      );
+
+    const realizedGainLossUsd =
+      realizedTransactions.reduce(
+        (total, transaction) =>
+          total +
+          (transaction.realizedGainLoss ??
+            0),
+        0,
+      );
+
+    /*
+     * Complete investment profit:
+     *
+     * unrealized
+     * +
+     * realized
+     */
+    const totalInvestmentProfitUsd =
+      investmentGainLossUsd +
+      realizedGainLossUsd;
+
+    const usdToBaseRate =
+      getValidRate(
+        "USD",
+        baseCurrency,
+        fxBaseCurrency,
+        fxRates,
+      );
 
     const investmentCurrentValue =
       usdToBaseRate === null
@@ -111,14 +156,26 @@ const useWealthSummary = () => {
         : investmentGainLossUsd *
           usdToBaseRate;
 
+    const realizedGainLoss =
+      usdToBaseRate === null
+        ? null
+        : realizedGainLossUsd *
+          usdToBaseRate;
+
+    const totalInvestmentProfit =
+      usdToBaseRate === null
+        ? null
+        : totalInvestmentProfitUsd *
+          usdToBaseRate;
+
     let totalCash = 0;
+
     let annualCashIncome = 0;
+
     let missingFxAccountCount = 0;
 
-    const cashByCurrency = new Map<
-      CurrencyCode,
-      number
-    >();
+    const cashByCurrency =
+      new Map<CurrencyCode, number>();
 
     accounts.forEach((account) => {
       const rate = getValidRate(
@@ -141,7 +198,9 @@ const useWealthSummary = () => {
         (account.annualYield / 100);
 
       totalCash += convertedBalance;
-      annualCashIncome += annualIncome;
+
+      annualCashIncome +=
+        annualIncome;
 
       cashByCurrency.set(
         account.currency,
@@ -176,7 +235,8 @@ const useWealthSummary = () => {
           totalCash;
 
     const cashAllocation =
-      netWorth !== null && netWorth > 0
+      netWorth !== null &&
+      netWorth > 0
         ? (totalCash / netWorth) * 100
         : 0;
 
@@ -189,42 +249,59 @@ const useWealthSummary = () => {
           100
         : 0;
 
-    const currencyBreakdown = Array.from(
-      cashByCurrency.entries(),
-    )
-      .map(([currency, value]) => ({
-        currency,
-        value,
+    const currencyBreakdown =
+      Array.from(
+        cashByCurrency.entries(),
+      )
+        .map(
+          ([currency, value]) => ({
+            currency,
+            value,
 
-        percentage:
-          totalCash > 0
-            ? (value / totalCash) * 100
-            : 0,
-      }))
-      .sort(
-        (firstItem, secondItem) =>
-          secondItem.value -
-          firstItem.value,
-      );
+            percentage:
+              totalCash > 0
+                ? (value /
+                    totalCash) *
+                  100
+                : 0,
+          }),
+        )
+        .sort(
+          (
+            firstItem,
+            secondItem,
+          ) =>
+            secondItem.value -
+            firstItem.value,
+        );
 
     return {
       baseCurrency,
 
       investmentCurrentValueUsd,
       investmentCostUsd,
+
       investmentGainLossUsd,
+      realizedGainLossUsd,
+      totalInvestmentProfitUsd,
 
       investmentCurrentValue,
       investmentCost,
+
       investmentGainLoss,
+      realizedGainLoss,
+      totalInvestmentProfit,
+
       investmentReturn,
 
       totalCash,
+
       annualCashIncome,
       monthlyCashIncome,
       cashWeightedYield,
 
       netWorth,
+
       cashAllocation,
       investmentAllocation,
 
@@ -232,8 +309,14 @@ const useWealthSummary = () => {
       missingFxAccountCount,
       hasCompleteFx,
 
-      positionCount: positions.length,
-      cashAccountCount: accounts.length,
+      positionCount:
+        positions.length,
+
+      cashAccountCount:
+        accounts.length,
+
+      realizedSaleCount:
+        realizedTransactions.length,
 
       currencyBreakdown,
     };
@@ -243,6 +326,7 @@ const useWealthSummary = () => {
     fxBaseCurrency,
     fxRates,
     positions,
+    transactions,
   ]);
 };
 

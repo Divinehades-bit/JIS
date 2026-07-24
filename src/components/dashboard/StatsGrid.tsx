@@ -26,7 +26,7 @@ const StatCard = ({
   return (
     <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-sm font-medium leading-5 text-slate-500">
+        <p className="text-sm font-medium text-slate-500">
           {title}
         </p>
 
@@ -37,7 +37,7 @@ const StatCard = ({
 
       <p
         title={value}
-        className={`mt-4 min-w-0 break-words text-[clamp(1.3rem,2vw,1.75rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName}`}
+        className={`mt-4 break-words text-[clamp(1.3rem,2vw,1.75rem)] font-bold leading-tight tracking-tight tabular-nums ${valueClassName}`}
       >
         {value}
       </p>
@@ -49,22 +49,26 @@ const StatCard = ({
   );
 };
 
+const getPerformanceClassName = (
+  value: number | null,
+) => {
+  if (value === null || value === 0) {
+    return "text-slate-900";
+  }
+
+  return value > 0
+    ? "text-emerald-600"
+    : "text-red-600";
+};
+
 const StatsGrid = () => {
   const {
     formatCurrency,
     formatSignedCurrency,
   } = useCurrencyFormatter();
 
-  const summary = useWealthSummary();
-
-  const gainClassName =
-    summary.investmentGainLoss !== null &&
-    summary.investmentGainLoss > 0
-      ? "text-emerald-600"
-      : summary.investmentGainLoss !== null &&
-          summary.investmentGainLoss < 0
-        ? "text-red-600"
-        : "text-slate-900";
+  const summary =
+    useWealthSummary();
 
   const formatOptionalCurrency = (
     value: number | null,
@@ -74,15 +78,16 @@ const StatsGrid = () => {
       : formatCurrency(value);
   };
 
-  const gainLossValue =
-    summary.investmentGainLoss === null
+  const formatOptionalSignedCurrency = (
+    value: number | null,
+  ) => {
+    return value === null
       ? "FX pending"
-      : formatSignedCurrency(
-          summary.investmentGainLoss,
-        );
+      : formatSignedCurrency(value);
+  };
 
   return (
-    <section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
         title="Net worth"
         value={formatOptionalCurrency(
@@ -91,7 +96,6 @@ const StatsGrid = () => {
         description="Investments plus all converted cash balances."
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -101,13 +105,7 @@ const StatsGrid = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M3 10h18M5 6h14a2 2 0 0 1 2 2v10H3V8a2 2 0 0 1 2-2Z"
-            />
-
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M16 14h2"
+              d="M4 6h16v13H4zM4 10h16M16 14h2"
             />
           </svg>
         }
@@ -118,14 +116,9 @@ const StatsGrid = () => {
         value={formatOptionalCurrency(
           summary.investmentCurrentValue,
         )}
-        description={`${summary.positionCount} ${
-          summary.positionCount === 1
-            ? "position"
-            : "positions"
-        } currently tracked.`}
+        description={`${summary.positionCount} positions currently held.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -146,14 +139,11 @@ const StatsGrid = () => {
         value={formatCurrency(
           summary.totalCash,
         )}
-        description={`${summary.cashAccountCount} ${
-          summary.cashAccountCount === 1
-            ? "cash account"
-            : "cash accounts"
-        } included.`}
+        description={`${percentageFormatter.format(
+          summary.cashAllocation,
+        )}% of total net worth.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -168,35 +158,48 @@ const StatsGrid = () => {
               rx="2"
             />
 
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M3 10h18"
-            />
-
             <circle
               cx="12"
-              cy="14"
-              r="2"
+              cy="12.5"
+              r="2.5"
             />
           </svg>
         }
       />
 
       <StatCard
-        title="Investment gain / loss"
-        value={gainLossValue}
-        valueClassName={gainClassName}
-        description={`Investment return: ${
+        title="Total investment profit"
+        value={formatOptionalSignedCurrency(
+          summary.totalInvestmentProfit,
+        )}
+        valueClassName={getPerformanceClassName(
+          summary.totalInvestmentProfit,
+        )}
+        description="Realized profit plus unrealized profit from current positions."
+        icon={
+          <span className="text-base font-bold">
+            Σ
+          </span>
+        }
+      />
+
+      <StatCard
+        title="Unrealized profit"
+        value={formatOptionalSignedCurrency(
+          summary.investmentGainLoss,
+        )}
+        valueClassName={getPerformanceClassName(
+          summary.investmentGainLoss,
+        )}
+        description={`Still held in your portfolio · ${
           summary.investmentReturn > 0
             ? "+"
             : ""
         }${percentageFormatter.format(
           summary.investmentReturn,
-        )}%.`}
+        )}% current return.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -219,6 +222,36 @@ const StatsGrid = () => {
       />
 
       <StatCard
+        title="Realized profit"
+        value={formatOptionalSignedCurrency(
+          summary.realizedGainLoss,
+        )}
+        valueClassName={getPerformanceClassName(
+          summary.realizedGainLoss,
+        )}
+        description={`${summary.realizedSaleCount} ${
+          summary.realizedSaleCount === 1
+            ? "sale"
+            : "sales"
+        } with realized performance recorded.`}
+        icon={
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            className="h-5 w-5"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 12h14M13 6l6 6-6 6"
+            />
+          </svg>
+        }
+      />
+
+      <StatCard
         title="Cash annual income"
         value={formatCurrency(
           summary.annualCashIncome,
@@ -229,7 +262,6 @@ const StatsGrid = () => {
         )} estimated average per month.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
@@ -250,12 +282,13 @@ const StatsGrid = () => {
         value={`${percentageFormatter.format(
           summary.cashWeightedYield,
         )}%`}
-        description={`Cash represents ${percentageFormatter.format(
-          summary.cashAllocation,
-        )}% of total net worth.`}
+        description={`Weighted yield across ${summary.cashAccountCount} cash ${
+          summary.cashAccountCount === 1
+            ? "account"
+            : "accounts"
+        }.`}
         icon={
           <svg
-            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             className="h-5 w-5"
