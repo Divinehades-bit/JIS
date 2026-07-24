@@ -93,55 +93,55 @@ const isRecord = (
 const normalizePositiveNumber = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     typeof value === "number"
       ? value
       : Number(value);
 
   if (
-    !Number.isFinite(parsedValue) ||
-    parsedValue <= 0
+    !Number.isFinite(parsed) ||
+    parsed <= 0
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
 };
 
 const normalizeNonNegativeNumber = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     typeof value === "number"
       ? value
       : Number(value);
 
   if (
-    !Number.isFinite(parsedValue) ||
-    parsedValue < 0
+    !Number.isFinite(parsed) ||
+    parsed < 0
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
 };
 
 const normalizeRate = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     normalizeNonNegativeNumber(
       value,
     );
 
   if (
-    parsedValue === null ||
-    parsedValue > 100
+    parsed === null ||
+    parsed > 100
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
 };
 
 const normalizeDate = (
@@ -151,18 +151,17 @@ const normalizeDate = (
     return null;
   }
 
-  const parsedDate =
-    new Date(value);
+  const date = new Date(value);
 
   if (
     Number.isNaN(
-      parsedDate.getTime(),
+      date.getTime(),
     )
   ) {
     return null;
   }
 
-  return parsedDate.toISOString();
+  return date.toISOString();
 };
 
 const createDividendId = () => {
@@ -269,31 +268,18 @@ const normalizeDividendRecord = (
 
   return {
     id,
-
     symbol,
-
     paymentDate,
-
     grossAmount,
-
     withholdingRate,
-
     taxWithheld,
-
     netAmount,
-
     currency: "USD",
-
     cashAccountId,
-
     cashAccountName,
-
     note,
-
     source: "manual",
-
     createdAt,
-
     updatedAt,
   };
 };
@@ -302,11 +288,10 @@ const saveDividendData = (
   records: DividendRecord[],
   defaultWithholdingRate: number,
 ) => {
-  const data: StoredDividendData = {
+  const data:
+    StoredDividendData = {
     version: 1,
-
     defaultWithholdingRate,
-
     records,
   };
 
@@ -326,12 +311,12 @@ const saveDividendData = (
 const loadDividendData =
   (): StoredDividendData => {
     try {
-      const storedValue =
+      const stored =
         localStorage.getItem(
           DIVIDEND_STORAGE_KEY,
         );
 
-      if (!storedValue) {
+      if (!stored) {
         return {
           version: 1,
 
@@ -342,10 +327,10 @@ const loadDividendData =
         };
       }
 
-      const parsedValue: unknown =
-        JSON.parse(storedValue);
+      const parsed: unknown =
+        JSON.parse(stored);
 
-      if (!isRecord(parsedValue)) {
+      if (!isRecord(parsed)) {
         throw new Error(
           "Invalid dividend storage.",
         );
@@ -353,9 +338,9 @@ const loadDividendData =
 
       const rawRecords =
         Array.isArray(
-          parsedValue.records,
+          parsed.records,
         )
-          ? parsedValue.records
+          ? parsed.records
           : [];
 
       const records =
@@ -370,30 +355,25 @@ const loadDividendData =
               record !== null,
           )
           .sort(
-            (
-              firstRecord,
-              secondRecord,
-            ) =>
+            (first, second) =>
               new Date(
-                secondRecord.paymentDate,
+                second.paymentDate,
               ).getTime() -
               new Date(
-                firstRecord.paymentDate,
+                first.paymentDate,
               ).getTime(),
           );
 
       const rate =
         normalizeRate(
-          parsedValue.defaultWithholdingRate,
+          parsed.defaultWithholdingRate,
         ) ??
         DEFAULT_WITHHOLDING_RATE;
 
       return {
         version: 1,
-
         defaultWithholdingRate:
           rate,
-
         records,
       };
     } catch (error) {
@@ -428,12 +408,10 @@ const useDividendStore =
       setDefaultWithholdingRate: (
         rate,
       ) => {
-        const normalizedRate =
+        const normalized =
           normalizeRate(rate);
 
-        if (
-          normalizedRate === null
-        ) {
+        if (normalized === null) {
           return {
             success: false,
 
@@ -442,17 +420,14 @@ const useDividendStore =
           };
         }
 
-        const records =
-          get().records;
-
         saveDividendData(
-          records,
-          normalizedRate,
+          get().records,
+          normalized,
         );
 
         set({
           defaultWithholdingRate:
-            normalizedRate,
+            normalized,
         });
 
         return {
@@ -486,7 +461,6 @@ const useDividendStore =
         if (!symbol) {
           return {
             success: false,
-
             error:
               "Dividend symbol is required.",
           };
@@ -497,7 +471,6 @@ const useDividendStore =
         ) {
           return {
             success: false,
-
             error:
               "Gross dividend must be greater than zero.",
           };
@@ -508,7 +481,6 @@ const useDividendStore =
         ) {
           return {
             success: false,
-
             error:
               "Withholding rate must be between 0% and 100%.",
           };
@@ -517,7 +489,6 @@ const useDividendStore =
         if (!paymentDate) {
           return {
             success: false,
-
             error:
               "Enter a valid payment date.",
           };
@@ -535,7 +506,6 @@ const useDividendStore =
         if (!cashAccount) {
           return {
             success: false,
-
             error:
               "Cash destination not found.",
           };
@@ -547,7 +517,6 @@ const useDividendStore =
         ) {
           return {
             success: false,
-
             error:
               "Investment dividends currently require a USD cash account.",
           };
@@ -562,18 +531,25 @@ const useDividendStore =
           taxWithheld;
 
         if (
-          netAmount < 0 ||
           !Number.isFinite(
             netAmount,
-          )
+          ) ||
+          netAmount < 0
         ) {
           return {
             success: false,
-
             error:
               "Unable to calculate the net dividend.",
           };
         }
+
+        /*
+         * Create the dividend ID
+         * BEFORE depositing the cash
+         * so both records can be linked.
+         */
+        const dividendId =
+          createDividendId();
 
         const cashResult =
           useCashStore
@@ -581,11 +557,24 @@ const useDividendStore =
             .adjustAccountBalance(
               cashAccount.id,
               netAmount,
+              {
+                type: "dividend",
+
+                date:
+                  paymentDate,
+
+                relatedId:
+                  dividendId,
+
+                symbol,
+
+                note:
+                  input.note?.trim() ||
+                  "ETF dividend",
+              },
             );
 
-        if (
-          !cashResult.success
-        ) {
+        if (!cashResult.success) {
           return {
             success: false,
 
@@ -600,7 +589,7 @@ const useDividendStore =
 
         const dividend:
           DividendRecord = {
-          id: createDividendId(),
+          id: dividendId,
 
           symbol,
 
@@ -637,15 +626,12 @@ const useDividendStore =
           dividend,
           ...get().records,
         ].sort(
-          (
-            firstRecord,
-            secondRecord,
-          ) =>
+          (first, second) =>
             new Date(
-              secondRecord.paymentDate,
+              second.paymentDate,
             ).getTime() -
             new Date(
-              firstRecord.paymentDate,
+              first.paymentDate,
             ).getTime(),
         );
 
@@ -678,7 +664,6 @@ const useDividendStore =
         if (!record) {
           return {
             success: false,
-
             error:
               "Dividend record not found.",
           };
@@ -702,17 +687,36 @@ const useDividendStore =
           };
         }
 
+        /*
+         * Reversal remains visible in
+         * the Cash Ledger as an
+         * adjustment, preserving the
+         * audit trail.
+         */
         const cashResult =
           useCashStore
             .getState()
             .adjustAccountBalance(
               cashAccount.id,
               -record.netAmount,
+              {
+                type: "adjustment",
+
+                date:
+                  new Date().toISOString(),
+
+                relatedId:
+                  record.id,
+
+                symbol:
+                  record.symbol,
+
+                note:
+                  `Reversal of ${record.symbol} dividend`,
+              },
             );
 
-        if (
-          !cashResult.success
-        ) {
+        if (!cashResult.success) {
           return {
             success: false,
 

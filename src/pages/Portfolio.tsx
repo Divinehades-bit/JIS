@@ -1,5 +1,6 @@
 import { useState } from "react";
 import CashManager from "../components/cash/CashManager";
+import CashMovementManager from "../components/cash/CashMovementManager";
 import DividendManager from "../components/dividends/DividendManager";
 import AddTransactionModal from "../components/portfolio/AddTransactionModal";
 import PortfolioAllocationChart from "../components/portfolio/PortfolioAllocationChart";
@@ -47,6 +48,8 @@ const Portfolio = () => {
         />
 
         <CashManager />
+
+        <CashMovementManager />
 
         <DividendManager />
 

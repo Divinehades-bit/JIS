@@ -1,7 +1,8 @@
 export type JisBackupVersion =
   | 1
   | 2
-  | 3;
+  | 3
+  | 4;
 
 type JisBackupV1Data = {
   portfolio: unknown;
@@ -21,6 +22,11 @@ type JisBackupV2Data =
 type JisBackupV3Data =
   JisBackupV2Data & {
     dividends: unknown;
+  };
+
+type JisBackupV4Data =
+  JisBackupV3Data & {
+    cashMovements: unknown;
   };
 
 type JisBackupV1 = {
@@ -44,10 +50,18 @@ type JisBackupV3 = {
   data: JisBackupV3Data;
 };
 
+type JisBackupV4 = {
+  app: "JIS";
+  version: 4;
+  exportedAt: string;
+  data: JisBackupV4Data;
+};
+
 export type JisBackup =
   | JisBackupV1
   | JisBackupV2
-  | JisBackupV3;
+  | JisBackupV3
+  | JisBackupV4;
 
 const STORAGE_KEYS = {
   portfolio: "portfolio",
@@ -66,6 +80,9 @@ const STORAGE_KEYS = {
 
   cashFxRates:
     "jis-cash-fx-rates",
+
+  cashMovements:
+    "jis-cash-movements",
 
   portfolioHistory:
     "jis-portfolio-history",
@@ -149,13 +166,17 @@ const writeStorageValue = (
   }
 };
 
-const clearModernData = () => {
+const clearPostV1Data = () => {
   localStorage.removeItem(
     STORAGE_KEYS.cashAccounts,
   );
 
   localStorage.removeItem(
     STORAGE_KEYS.cashFxRates,
+  );
+
+  localStorage.removeItem(
+    STORAGE_KEYS.cashMovements,
   );
 
   localStorage.removeItem(
@@ -206,11 +227,11 @@ const getDateString = () => {
 };
 
 export const createBackup =
-  (): JisBackupV3 => {
+  (): JisBackupV4 => {
     return {
       app: "JIS",
 
-      version: 3,
+      version: 4,
 
       exportedAt:
         new Date().toISOString(),
@@ -244,6 +265,11 @@ export const createBackup =
         cashFxRates:
           readStorageValue(
             STORAGE_KEYS.cashFxRates,
+          ),
+
+        cashMovements:
+          readStorageValue(
+            STORAGE_KEYS.cashMovements,
           ),
 
         portfolioHistory:
@@ -325,7 +351,8 @@ const validateBackup = (
   if (
     value.version !== 1 &&
     value.version !== 2 &&
-    value.version !== 3
+    value.version !== 3 &&
+    value.version !== 4
   ) {
     throw new Error(
       "Unsupported JIS backup version.",
@@ -400,6 +427,17 @@ const restoreV2Data = (
   );
 };
 
+const restoreV3Data = (
+  data: JisBackupV3Data,
+) => {
+  restoreV2Data(data);
+
+  writeStorageValue(
+    STORAGE_KEYS.dividends,
+    data.dividends,
+  );
+};
+
 export const importJisBackup =
   async (
     file: File,
@@ -422,9 +460,9 @@ export const importJisBackup =
       validateBackup(parsedValue);
 
     /*
-     * Never preserve transient
-     * market-refresh cooldown state
-     * when importing a backup.
+     * Market refresh cooldown is
+     * temporary state and must never
+     * be restored from a backup.
      */
     localStorage.removeItem(
       STORAGE_KEYS.priceCooldown,
@@ -434,12 +472,11 @@ export const importJisBackup =
       backup.version === 1
     ) {
       /*
-       * Avoid combining an old backup
-       * with newer cash, history or
-       * dividend data that already exists
-       * in this browser.
+       * Version 1 predates cash,
+       * historical wealth, dividends
+       * and the Cash Ledger.
        */
-      clearModernData();
+      clearPostV1Data();
 
       restoreBaseData(
         backup.data,
@@ -452,13 +489,21 @@ export const importJisBackup =
       backup.version === 2
     ) {
       /*
-       * Version 2 predates dividends.
-       * Remove existing dividend data so
-       * an older backup produces exactly
-       * the state it originally contained.
+       * Version 2 includes cash but
+       * predates dividends and the
+       * Cash Ledger.
+       *
+       * Removing the ledger allows JIS
+       * to reconstruct compatible
+       * historical movements after the
+       * application reloads.
        */
       localStorage.removeItem(
         STORAGE_KEYS.dividends,
+      );
+
+      localStorage.removeItem(
+        STORAGE_KEYS.cashMovements,
       );
 
       restoreV2Data(
@@ -468,13 +513,39 @@ export const importJisBackup =
       return backup;
     }
 
-    restoreV2Data(
+    if (
+      backup.version === 3
+    ) {
+      /*
+       * Version 3 includes dividends
+       * but predates the Cash Ledger.
+       *
+       * JIS will reconstruct known
+       * purchase, sale and dividend
+       * cash movements after reload.
+       */
+      localStorage.removeItem(
+        STORAGE_KEYS.cashMovements,
+      );
+
+      restoreV3Data(
+        backup.data,
+      );
+
+      return backup;
+    }
+
+    /*
+     * Version 4 restores the complete
+     * Cash Ledger exactly as exported.
+     */
+    restoreV3Data(
       backup.data,
     );
 
     writeStorageValue(
-      STORAGE_KEYS.dividends,
-      backup.data.dividends,
+      STORAGE_KEYS.cashMovements,
+      backup.data.cashMovements,
     );
 
     return backup;
@@ -482,10 +553,12 @@ export const importJisBackup =
 
 export const resetJisData = () => {
   /*
-   * Keep these keys as empty arrays.
-   * Removing portfolio completely would
-   * cause portfolioStore to recreate its
-   * original demo positions.
+   * Keep portfolio and transaction
+   * keys as empty arrays.
+   *
+   * Removing them completely would
+   * cause the original demo portfolio
+   * to be recreated.
    */
   writeStorageValue(
     STORAGE_KEYS.portfolio,
@@ -511,6 +584,10 @@ export const resetJisData = () => {
 
   localStorage.removeItem(
     STORAGE_KEYS.cashFxRates,
+  );
+
+  localStorage.removeItem(
+    STORAGE_KEYS.cashMovements,
   );
 
   localStorage.removeItem(

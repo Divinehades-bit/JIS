@@ -103,8 +103,7 @@ const PORTFOLIO_STORAGE_KEY =
 const TRANSACTIONS_STORAGE_KEY =
   "portfolio-transactions";
 
-const MAX_SYMBOLS_PER_REFRESH =
-  8;
+const MAX_SYMBOLS_PER_REFRESH = 8;
 
 const FLOATING_POINT_TOLERANCE =
   0.00000001;
@@ -180,8 +179,7 @@ const normalizeIsoDate = (
     return undefined;
   }
 
-  const parsedDate =
-    new Date(value);
+  const parsedDate = new Date(value);
 
   if (
     Number.isNaN(
@@ -259,7 +257,6 @@ const normalizePosition = (
     shares,
     averageCost,
     price,
-
     priceUpdatedAt:
       normalizeIsoDate(
         value.priceUpdatedAt,
@@ -312,25 +309,19 @@ const normalizeTransaction = (
       value.price,
     );
 
-  const derivedAmount =
-    shares !== null &&
-    price !== null
-      ? shares * price
-      : null;
-
   const amount =
     normalizePositiveNumber(
       value.amount ??
-        derivedAmount,
+        (shares !== null &&
+        price !== null
+          ? shares * price
+          : null),
     );
 
-  const date =
-    typeof value.date === "string"
-      ? value.date
-      : "";
-
   const parsedDate =
-    new Date(date);
+    typeof value.date === "string"
+      ? new Date(value.date)
+      : new Date(Number.NaN);
 
   if (
     !type ||
@@ -339,7 +330,6 @@ const normalizeTransaction = (
     shares === null ||
     price === null ||
     amount === null ||
-    !date ||
     Number.isNaN(
       parsedDate.getTime(),
     )
@@ -382,10 +372,8 @@ const normalizeTransaction = (
     amount,
     shares,
     price,
-
     date:
       parsedDate.toISOString(),
-
     note,
     realizedGainLoss,
     cashAccountId,
@@ -430,14 +418,12 @@ const saveTransactions = (
 const loadPositions =
   (): Position[] => {
     try {
-      const savedPositions =
+      const stored =
         localStorage.getItem(
           PORTFOLIO_STORAGE_KEY,
         );
 
-      if (
-        savedPositions === null
-      ) {
+      if (stored === null) {
         savePositions(
           defaultPositions,
         );
@@ -445,17 +431,10 @@ const loadPositions =
         return defaultPositions;
       }
 
-      const parsedPositions:
-        unknown =
-        JSON.parse(
-          savedPositions,
-        );
+      const parsed: unknown =
+        JSON.parse(stored);
 
-      if (
-        !Array.isArray(
-          parsedPositions,
-        )
-      ) {
+      if (!Array.isArray(parsed)) {
         savePositions(
           defaultPositions,
         );
@@ -463,11 +442,9 @@ const loadPositions =
         return defaultPositions;
       }
 
-      const normalizedPositions =
-        parsedPositions
-          .map(
-            normalizePosition,
-          )
+      const normalized =
+        parsed
+          .map(normalizePosition)
           .filter(
             (
               position,
@@ -476,10 +453,8 @@ const loadPositions =
           );
 
       if (
-        parsedPositions.length >
-          0 &&
-        normalizedPositions.length ===
-          0
+        parsed.length > 0 &&
+        normalized.length === 0
       ) {
         savePositions(
           defaultPositions,
@@ -488,11 +463,9 @@ const loadPositions =
         return defaultPositions;
       }
 
-      savePositions(
-        normalizedPositions,
-      );
+      savePositions(normalized);
 
-      return normalizedPositions;
+      return normalized;
     } catch (error) {
       console.error(
         "Unable to load portfolio:",
@@ -516,24 +489,19 @@ const createOpeningTransactions = (
   return positions.map(
     (position) => ({
       id: createTransactionId(),
-
       type: "opening",
-
-      symbol:
-        position.symbol,
+      symbol: position.symbol,
 
       amount:
         position.shares *
         position.averageCost,
 
-      shares:
-        position.shares,
+      shares: position.shares,
 
       price:
         position.averageCost,
 
-      date:
-        migrationDate,
+      date: migrationDate,
 
       note:
         "Imported opening position",
@@ -545,43 +513,33 @@ const loadTransactions = (
   positions: Position[],
 ): Transaction[] => {
   try {
-    const savedTransactions =
+    const stored =
       localStorage.getItem(
         TRANSACTIONS_STORAGE_KEY,
       );
 
-    if (
-      savedTransactions === null
-    ) {
-      const openingTransactions =
+    if (stored === null) {
+      const opening =
         createOpeningTransactions(
           positions,
         );
 
-      saveTransactions(
-        openingTransactions,
-      );
+      saveTransactions(opening);
 
-      return openingTransactions;
+      return opening;
     }
 
-    const parsedTransactions:
-      unknown =
-      JSON.parse(
-        savedTransactions,
-      );
+    const parsed: unknown =
+      JSON.parse(stored);
 
-    if (
-      !Array.isArray(
-        parsedTransactions,
-      )
-    ) {
+    if (!Array.isArray(parsed)) {
       saveTransactions([]);
+
       return [];
     }
 
-    const normalizedTransactions =
-      parsedTransactions
+    const normalized =
+      parsed
         .map(
           normalizeTransaction,
         )
@@ -592,23 +550,20 @@ const loadTransactions = (
             transaction !== null,
         )
         .sort(
-          (
-            firstTransaction,
-            secondTransaction,
-          ) =>
+          (first, second) =>
             new Date(
-              secondTransaction.date,
+              second.date,
             ).getTime() -
             new Date(
-              firstTransaction.date,
+              first.date,
             ).getTime(),
         );
 
     saveTransactions(
-      normalizedTransactions,
+      normalized,
     );
 
-    return normalizedTransactions;
+    return normalized;
   } catch (error) {
     console.error(
       "Unable to load transactions:",
@@ -657,22 +612,18 @@ const replaceSymbolPositions = (
       : positions;
   }
 
-  const nextPositions:
-    Position[] = [];
+  const result: Position[] = [];
 
   positions.forEach(
     (position, index) => {
-      const matchesSymbol =
+      const matches =
         position.symbol
           .trim()
           .toUpperCase() ===
         symbol;
 
-      if (!matchesSymbol) {
-        nextPositions.push(
-          position,
-        );
-
+      if (!matches) {
+        result.push(position);
         return;
       }
 
@@ -681,14 +632,12 @@ const replaceSymbolPositions = (
           firstMatchingIndex &&
         replacement !== null
       ) {
-        nextPositions.push(
-          replacement,
-        );
+        result.push(replacement);
       }
     },
   );
 
-  return nextPositions;
+  return result;
 };
 
 const getLatestPriceUpdate = (
@@ -757,7 +706,7 @@ const getSymbolsForNextRefresh = (
         return;
       }
 
-      const timestamp =
+      const rawTimestamp =
         position.priceUpdatedAt
           ? new Date(
               position.priceUpdatedAt,
@@ -766,9 +715,9 @@ const getSymbolsForNextRefresh = (
 
       const validTimestamp =
         Number.isFinite(
-          timestamp,
+          rawTimestamp,
         )
-          ? timestamp
+          ? rawTimestamp
           : null;
 
       if (
@@ -782,13 +731,12 @@ const getSymbolsForNextRefresh = (
         return;
       }
 
-      const existingTimestamp =
+      const existing =
         symbolMap.get(symbol) ??
         null;
 
       if (
-        existingTimestamp ===
-          null ||
+        existing === null ||
         validTimestamp === null
       ) {
         symbolMap.set(
@@ -801,16 +749,15 @@ const getSymbolsForNextRefresh = (
 
       symbolMap.set(
         symbol,
-
         Math.min(
-          existingTimestamp,
+          existing,
           validTimestamp,
         ),
       );
     },
   );
 
-  const orderedSymbols:
+  const ordered:
     SymbolPriceAge[] =
     Array.from(
       symbolMap.entries(),
@@ -821,51 +768,43 @@ const getSymbolsForNextRefresh = (
       }),
     );
 
-  orderedSymbols.sort(
-    (
-      firstSymbol,
-      secondSymbol,
-    ) => {
+  ordered.sort(
+    (first, second) => {
       if (
-        firstSymbol.updatedAt ===
+        first.updatedAt ===
           null &&
-        secondSymbol.updatedAt !==
-          null
+        second.updatedAt !== null
       ) {
         return -1;
       }
 
       if (
-        firstSymbol.updatedAt !==
+        first.updatedAt !==
           null &&
-        secondSymbol.updatedAt ===
-          null
+        second.updatedAt === null
       ) {
         return 1;
       }
 
       if (
-        firstSymbol.updatedAt ===
+        first.updatedAt ===
           null &&
-        secondSymbol.updatedAt ===
-          null
+        second.updatedAt === null
       ) {
-        return firstSymbol.symbol.localeCompare(
-          secondSymbol.symbol,
+        return first.symbol.localeCompare(
+          second.symbol,
         );
       }
 
       return (
-        (firstSymbol.updatedAt ??
-          0) -
-        (secondSymbol.updatedAt ??
-          0)
+        (first.updatedAt ?? 0) -
+        (second.updatedAt ?? 0)
       );
     },
   );
 
   const symbols =
-    orderedSymbols.map(
+    ordered.map(
       (item) => item.symbol,
     );
 
@@ -920,34 +859,19 @@ const usePortfolioStore =
       addPosition: (
         position,
       ) => {
-        const normalizedPosition =
+        const normalized =
           normalizePosition(
             position,
           );
 
-        if (
-          !normalizedPosition
-        ) {
-          console.error(
-            "Invalid position:",
-            position,
-          );
-
+        if (!normalized) {
           return;
         }
 
         set((state) => {
-          const nextPosition:
-            Position = {
-            ...normalizedPosition,
-
-            priceUpdatedAt:
-              normalizedPosition.priceUpdatedAt,
-          };
-
           const nextPositions = [
             ...state.positions,
-            nextPosition,
+            normalized,
           ];
 
           const openingTransaction:
@@ -957,17 +881,17 @@ const usePortfolioStore =
             type: "opening",
 
             symbol:
-              nextPosition.symbol,
+              normalized.symbol,
 
             amount:
-              nextPosition.shares *
-              nextPosition.averageCost,
+              normalized.shares *
+              normalized.averageCost,
 
             shares:
-              nextPosition.shares,
+              normalized.shares,
 
             price:
-              nextPosition.averageCost,
+              normalized.averageCost,
 
             date:
               new Date().toISOString(),
@@ -1010,38 +934,31 @@ const usePortfolioStore =
       },
 
       updatePosition: (
-        updatedPosition,
+        position,
       ) => {
-        const normalizedPosition =
+        const normalized =
           normalizePosition(
-            updatedPosition,
+            position,
           );
 
-        if (
-          !normalizedPosition
-        ) {
-          console.error(
-            "Invalid updated position:",
-            updatedPosition,
-          );
-
+        if (!normalized) {
           return;
         }
 
         set((state) => {
           const nextPositions =
             state.positions.map(
-              (position) =>
-                position.id ===
-                normalizedPosition.id
+              (existing) =>
+                existing.id ===
+                normalized.id
                   ? {
-                      ...normalizedPosition,
+                      ...normalized,
 
                       priceUpdatedAt:
-                        normalizedPosition.priceUpdatedAt ??
-                        position.priceUpdatedAt,
+                        normalized.priceUpdatedAt ??
+                        existing.priceUpdatedAt,
                     }
-                  : position,
+                  : existing,
             );
 
           savePositions(
@@ -1065,9 +982,7 @@ const usePortfolioStore =
         });
       },
 
-      removePosition: (
-        id,
-      ) => {
+      removePosition: (id) => {
         set((state) => {
           const nextPositions =
             state.positions.filter(
@@ -1117,9 +1032,7 @@ const usePortfolioStore =
           );
 
         const parsedDate =
-          new Date(
-            input.date,
-          );
+          new Date(input.date);
 
         if (!symbol) {
           return {
@@ -1129,9 +1042,7 @@ const usePortfolioStore =
           };
         }
 
-        if (
-          amount === null
-        ) {
+        if (amount === null) {
           return {
             success: false,
             error:
@@ -1139,9 +1050,7 @@ const usePortfolioStore =
           };
         }
 
-        if (
-          price === null
-        ) {
+        if (price === null) {
           return {
             success: false,
             error:
@@ -1185,10 +1094,7 @@ const usePortfolioStore =
 
         const currentShares =
           matchingPositions.reduce(
-            (
-              total,
-              position,
-            ) =>
+            (total, position) =>
               total +
               position.shares,
             0,
@@ -1196,10 +1102,7 @@ const usePortfolioStore =
 
         const currentInvestedCapital =
           matchingPositions.reduce(
-            (
-              total,
-              position,
-            ) =>
+            (total, position) =>
               total +
               position.shares *
                 position.averageCost,
@@ -1394,6 +1297,18 @@ const usePortfolioStore =
           }
         }
 
+        /*
+         * We create the transaction ID
+         * BEFORE moving cash.
+         *
+         * This allows the Cash Ledger
+         * movement and investment
+         * transaction to share the same
+         * reference.
+         */
+        const transactionId =
+          createTransactionId();
+
         if (cashAccount) {
           const cashMovement =
             input.type === "buy"
@@ -1406,6 +1321,24 @@ const usePortfolioStore =
               .adjustAccountBalance(
                 cashAccount.id,
                 cashMovement,
+                {
+                  type:
+                    input.type === "buy"
+                      ? "investment_buy"
+                      : "investment_sell",
+
+                  date:
+                    parsedDate.toISOString(),
+
+                  relatedId:
+                    transactionId,
+
+                  symbol,
+
+                  note:
+                    input.note?.trim() ||
+                    undefined,
+                },
               );
 
           if (
@@ -1413,7 +1346,6 @@ const usePortfolioStore =
           ) {
             return {
               success: false,
-
               error:
                 cashResult.error ??
                 "Unable to update the cash account.",
@@ -1423,10 +1355,9 @@ const usePortfolioStore =
 
         const transaction:
           Transaction = {
-          id: createTransactionId(),
+          id: transactionId,
 
-          type:
-            input.type,
+          type: input.type,
 
           symbol,
 
@@ -1457,15 +1388,12 @@ const usePortfolioStore =
           transaction,
           ...state.transactions,
         ].sort(
-          (
-            firstTransaction,
-            secondTransaction,
-          ) =>
+          (first, second) =>
             new Date(
-              secondTransaction.date,
+              second.date,
             ).getTime() -
             new Date(
-              firstTransaction.date,
+              first.date,
             ).getTime(),
         );
 
@@ -1577,11 +1505,26 @@ const usePortfolioStore =
             .adjustAccountBalance(
               cashAccount.id,
               transaction.amount,
+              {
+                type:
+                  "investment_sell",
+
+                date:
+                  transaction.date,
+
+                relatedId:
+                  transaction.id,
+
+                symbol:
+                  transaction.symbol,
+
+                note:
+                  transaction.note ??
+                  "Historical sale reconciliation",
+              },
             );
 
-        if (
-          !cashResult.success
-        ) {
+        if (!cashResult.success) {
           return {
             success: false,
             error:
@@ -1624,8 +1567,7 @@ const usePortfolioStore =
       refreshMarketPrices:
         async () => {
           if (
-            get()
-              .priceSyncStatus ===
+            get().priceSyncStatus ===
             "loading"
           ) {
             return {
@@ -1747,9 +1689,7 @@ const usePortfolioStore =
               ) {
                 recordPortfolioSnapshot(
                   nextPositions,
-
                   "market-sync",
-
                   response.updatedAt,
                 );
               }
@@ -1816,8 +1756,7 @@ const usePortfolioStore =
               updatedSymbols: [],
               deferredSymbols,
               errors: {},
-              error:
-                message,
+              error: message,
             };
           }
         },

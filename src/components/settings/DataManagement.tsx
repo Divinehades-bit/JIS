@@ -51,7 +51,7 @@ const DataManagement = () => {
       );
 
       setMessage(
-        "Backup version 3 exported successfully.",
+        "Backup version 4 exported successfully.",
       );
     } catch (exportError) {
       console.error(
@@ -84,7 +84,7 @@ const DataManagement = () => {
 
     const confirmed =
       window.confirm(
-        "Importing this backup will replace your current JIS portfolio, transactions, cash, goals, settings, history and dividend data.\n\nContinue?",
+        "Importing this backup will replace your current JIS portfolio, transactions, cash, cash movements, goals, settings, history and dividend data.\n\nContinue?",
       );
 
     if (!confirmed) {
@@ -128,7 +128,7 @@ const DataManagement = () => {
 
     const firstConfirmation =
       window.confirm(
-        "Reset all JIS data?\n\nThis will remove your investments, transactions, cash accounts, dividends, goals, settings and historical data.",
+        "Reset all JIS data?\n\nThis will remove your investments, transactions, cash accounts, cash movements, dividends, goals, settings and historical data.",
       );
 
     if (!firstConfirmation) {
@@ -178,31 +178,30 @@ const DataManagement = () => {
 
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
           Export a complete copy of
-          your JIS data or restore a
-          previous backup.
+          your JIS financial data or
+          restore a previous backup.
         </p>
       </div>
 
       <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white font-bold text-blue-600 shadow-sm">
-            3
+            4
           </div>
 
           <div>
             <p className="font-semibold text-blue-900">
-              Backup version 3
+              Backup version 4
             </p>
 
             <p className="mt-1 text-sm leading-6 text-blue-700">
-              Includes your portfolio,
+              Includes portfolio,
               transactions, goals,
               settings, multicurrency
               cash, FX rates, historical
               net worth, dividends,
-              withholding taxes and
-              dividend cash
-              destinations.
+              withholding taxes and the
+              complete Cash Ledger.
             </p>
           </div>
         </div>
@@ -220,7 +219,8 @@ const DataManagement = () => {
 
           <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
             Download your complete JIS
-            data as a JSON backup file.
+            financial data as a JSON
+            backup file.
           </p>
 
           <button
@@ -243,8 +243,7 @@ const DataManagement = () => {
 
           <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
             Restore JIS from a version
-            1, version 2 or version 3
-            backup.
+            1, 2, 3 or 4 backup.
           </p>
 
           <button
@@ -294,6 +293,21 @@ const DataManagement = () => {
             Reset all JIS data
           </button>
         </article>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Cash Ledger included
+        </h3>
+
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Backup v4 preserves external
+          deposits, external
+          withdrawals, investment
+          purchases, investment sales,
+          dividends, opening balances
+          and manual cash adjustments.
+        </p>
       </div>
 
       {message && (

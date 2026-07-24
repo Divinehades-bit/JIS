@@ -24,6 +24,50 @@ export type CashAccountInput = {
   annualYield: number;
 };
 
+export type CashMovementType =
+  | "opening_balance"
+  | "external_deposit"
+  | "external_withdrawal"
+  | "investment_buy"
+  | "investment_sell"
+  | "dividend"
+  | "adjustment";
+
+export type CashMovement = {
+  id: string;
+
+  cashAccountId: string;
+  cashAccountName: string;
+
+  currency: CurrencyCode;
+
+  type: CashMovementType;
+
+  /*
+   * Signed amount:
+   *
+   * + money entering cash
+   * - money leaving cash
+   */
+  amount: number;
+
+  date: string;
+
+  relatedId?: string;
+  symbol?: string;
+  note?: string;
+
+  createdAt: string;
+};
+
+export type CashMovementMeta = {
+  type?: CashMovementType;
+  date?: string;
+  relatedId?: string;
+  symbol?: string;
+  note?: string;
+};
+
 export type CashActionResult = {
   success: boolean;
   error?: string;
@@ -37,22 +81,28 @@ export type FxSyncStatus =
 
 export type FxRefreshResult = {
   success: boolean;
+
   errors: Partial<
     Record<CurrencyCode, string>
   >;
+
   error?: string;
 };
 
 type StoredFxData = {
   baseCurrency: CurrencyCode;
+
   rates: Partial<
     Record<CurrencyCode, number>
   >;
+
   updatedAt: string;
 };
 
 type CashStore = {
   accounts: CashAccount[];
+
+  movements: CashMovement[];
 
   fxBaseCurrency: CurrencyCode | null;
 
@@ -61,7 +111,9 @@ type CashStore = {
   >;
 
   fxUpdatedAt: string | null;
+
   fxSyncStatus: FxSyncStatus;
+
   fxSyncError: string | null;
 
   addAccount: (
@@ -78,6 +130,21 @@ type CashStore = {
   adjustAccountBalance: (
     id: string,
     amount: number,
+    movement?: CashMovementMeta,
+  ) => CashActionResult;
+
+  addExternalDeposit: (
+    accountId: string,
+    amount: number,
+    date: string,
+    note?: string,
+  ) => CashActionResult;
+
+  addExternalWithdrawal: (
+    accountId: string,
+    amount: number,
+    date: string,
+    note?: string,
   ) => CashActionResult;
 
   refreshFxRates: (
@@ -91,7 +158,28 @@ export const CASH_ACCOUNTS_STORAGE_KEY =
 export const CASH_FX_STORAGE_KEY =
   "jis-cash-fx-rates";
 
-const BALANCE_TOLERANCE = 0.00000001;
+export const CASH_MOVEMENTS_STORAGE_KEY =
+  "jis-cash-movements";
+
+const TRANSACTIONS_STORAGE_KEY =
+  "portfolio-transactions";
+
+const DIVIDENDS_STORAGE_KEY =
+  "jis-dividends";
+
+const BALANCE_TOLERANCE =
+  0.00000001;
+
+const movementTypes:
+  CashMovementType[] = [
+    "opening_balance",
+    "external_deposit",
+    "external_withdrawal",
+    "investment_buy",
+    "investment_sell",
+    "dividend",
+    "adjustment",
+  ];
 
 const isRecord = (
   value: unknown,
@@ -105,56 +193,71 @@ const isRecord = (
 const normalizeNonNegativeNumber = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     typeof value === "number"
       ? value
       : Number(value);
 
   if (
-    !Number.isFinite(parsedValue) ||
-    parsedValue < 0
+    !Number.isFinite(parsed) ||
+    parsed < 0
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
 };
 
 const normalizePositiveNumber = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     typeof value === "number"
       ? value
       : Number(value);
 
   if (
-    !Number.isFinite(parsedValue) ||
-    parsedValue <= 0
+    !Number.isFinite(parsed) ||
+    parsed <= 0
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
+};
+
+const normalizeSignedNumber = (
+  value: unknown,
+): number | null => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
 };
 
 const normalizeYield = (
   value: unknown,
 ): number | null => {
-  const parsedValue =
+  const parsed =
     typeof value === "number"
       ? value
       : Number(value);
 
   if (
-    !Number.isFinite(parsedValue) ||
-    parsedValue < 0 ||
-    parsedValue > 100
+    !Number.isFinite(parsed) ||
+    parsed < 0 ||
+    parsed > 100
   ) {
     return null;
   }
 
-  return parsedValue;
+  return parsed;
 };
 
 const normalizeIsoDate = (
@@ -164,7 +267,8 @@ const normalizeIsoDate = (
     return null;
   }
 
-  const parsedDate = new Date(value);
+  const parsedDate =
+    new Date(value);
 
   if (
     Number.isNaN(
@@ -177,7 +281,7 @@ const normalizeIsoDate = (
   return parsedDate.toISOString();
 };
 
-const createAccountId = () => {
+const createId = () => {
   if (
     typeof crypto !== "undefined" &&
     typeof crypto.randomUUID ===
@@ -266,48 +370,164 @@ const normalizeAccount = (
   };
 };
 
+const normalizeMovement = (
+  value: unknown,
+): CashMovement | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id =
+    typeof value.id === "string"
+      ? value.id.trim()
+      : "";
+
+  const cashAccountId =
+    typeof value.cashAccountId ===
+      "string"
+      ? value.cashAccountId.trim()
+      : "";
+
+  const cashAccountName =
+    typeof value.cashAccountName ===
+      "string"
+      ? value.cashAccountName.trim()
+      : "";
+
+  const currency =
+    isSupportedCurrency(
+      value.currency,
+    )
+      ? value.currency
+      : null;
+
+  const type =
+    typeof value.type === "string" &&
+    movementTypes.includes(
+      value.type as CashMovementType,
+    )
+      ? (value.type as CashMovementType)
+      : null;
+
+  const amount =
+    normalizeSignedNumber(
+      value.amount,
+    );
+
+  const date =
+    normalizeIsoDate(
+      value.date,
+    );
+
+  const createdAt =
+    normalizeIsoDate(
+      value.createdAt,
+    );
+
+  const relatedId =
+    typeof value.relatedId ===
+      "string" &&
+    value.relatedId.trim()
+      ? value.relatedId.trim()
+      : undefined;
+
+  const symbol =
+    typeof value.symbol === "string" &&
+    value.symbol.trim()
+      ? value.symbol
+          .trim()
+          .toUpperCase()
+      : undefined;
+
+  const note =
+    typeof value.note === "string" &&
+    value.note.trim()
+      ? value.note.trim()
+      : undefined;
+
+  if (
+    !id ||
+    !cashAccountId ||
+    !cashAccountName ||
+    !currency ||
+    !type ||
+    amount === null ||
+    !date ||
+    !createdAt
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    cashAccountId,
+    cashAccountName,
+    currency,
+    type,
+    amount,
+    date,
+    relatedId,
+    symbol,
+    note,
+    createdAt,
+  };
+};
+
 const saveAccounts = (
   accounts: CashAccount[],
 ) => {
-  try {
-    localStorage.setItem(
-      CASH_ACCOUNTS_STORAGE_KEY,
-      JSON.stringify(accounts),
-    );
-  } catch (error) {
-    console.error(
-      "Unable to save cash accounts:",
-      error,
-    );
-  }
+  localStorage.setItem(
+    CASH_ACCOUNTS_STORAGE_KEY,
+    JSON.stringify(accounts),
+  );
+};
+
+const saveMovements = (
+  movements: CashMovement[],
+) => {
+  localStorage.setItem(
+    CASH_MOVEMENTS_STORAGE_KEY,
+    JSON.stringify(movements),
+  );
+};
+
+const sortMovements = (
+  movements: CashMovement[],
+) => {
+  return [...movements].sort(
+    (first, second) =>
+      new Date(
+        second.date,
+      ).getTime() -
+      new Date(
+        first.date,
+      ).getTime(),
+  );
 };
 
 const loadAccounts =
   (): CashAccount[] => {
     try {
-      const storedAccounts =
+      const stored =
         localStorage.getItem(
           CASH_ACCOUNTS_STORAGE_KEY,
         );
 
-      if (!storedAccounts) {
+      if (!stored) {
         return [];
       }
 
-      const parsedAccounts: unknown =
-        JSON.parse(storedAccounts);
+      const parsed: unknown =
+        JSON.parse(stored);
 
-      if (
-        !Array.isArray(
-          parsedAccounts,
-        )
-      ) {
+      if (!Array.isArray(parsed)) {
         saveAccounts([]);
+
         return [];
       }
 
-      const normalizedAccounts =
-        parsedAccounts
+      const accounts =
+        parsed
           .map(normalizeAccount)
           .filter(
             (
@@ -316,11 +536,9 @@ const loadAccounts =
               account !== null,
           );
 
-      saveAccounts(
-        normalizedAccounts,
-      );
+      saveAccounts(accounts);
 
-      return normalizedAccounts;
+      return accounts;
     } catch (error) {
       console.error(
         "Unable to load cash accounts:",
@@ -330,6 +548,438 @@ const loadAccounts =
       return [];
     }
   };
+
+const migrateInvestmentMovements = (
+  accounts: CashAccount[],
+): CashMovement[] => {
+  try {
+    const stored =
+      localStorage.getItem(
+        TRANSACTIONS_STORAGE_KEY,
+      );
+
+    if (!stored) {
+      return [];
+    }
+
+    const parsed: unknown =
+      JSON.parse(stored);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.flatMap(
+      (value) => {
+        if (!isRecord(value)) {
+          return [];
+        }
+
+        const type =
+          value.type === "buy"
+            ? "investment_buy"
+            : value.type === "sell"
+              ? "investment_sell"
+              : null;
+
+        if (!type) {
+          return [];
+        }
+
+        const transactionId =
+          typeof value.id === "string"
+            ? value.id
+            : "";
+
+        const accountId =
+          typeof value.cashAccountId ===
+            "string"
+            ? value.cashAccountId
+            : "";
+
+        const amount =
+          normalizePositiveNumber(
+            value.amount,
+          );
+
+        const date =
+          normalizeIsoDate(
+            value.date,
+          );
+
+        if (
+          !transactionId ||
+          !accountId ||
+          amount === null ||
+          !date
+        ) {
+          return [];
+        }
+
+        const account =
+          accounts.find(
+            (item) =>
+              item.id === accountId,
+          );
+
+        if (!account) {
+          return [];
+        }
+
+        const symbol =
+          typeof value.symbol ===
+            "string"
+            ? value.symbol
+                .trim()
+                .toUpperCase()
+            : undefined;
+
+        const note =
+          typeof value.note ===
+            "string" &&
+          value.note.trim()
+            ? value.note.trim()
+            : undefined;
+
+        const movement:
+          CashMovement = {
+          id:
+            `migration-transaction-${transactionId}`,
+
+          cashAccountId:
+            account.id,
+
+          cashAccountName:
+            account.name,
+
+          currency:
+            account.currency,
+
+          type,
+
+          amount:
+            type ===
+            "investment_buy"
+              ? -amount
+              : amount,
+
+          date,
+
+          relatedId:
+            transactionId,
+
+          symbol,
+
+          note,
+
+          createdAt:
+            new Date().toISOString(),
+        };
+
+        return [movement];
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Unable to migrate investment cash movements:",
+      error,
+    );
+
+    return [];
+  }
+};
+
+const migrateDividendMovements = (
+  accounts: CashAccount[],
+): CashMovement[] => {
+  try {
+    const stored =
+      localStorage.getItem(
+        DIVIDENDS_STORAGE_KEY,
+      );
+
+    if (!stored) {
+      return [];
+    }
+
+    const parsed: unknown =
+      JSON.parse(stored);
+
+    if (!isRecord(parsed)) {
+      return [];
+    }
+
+    const rawRecords =
+      Array.isArray(parsed.records)
+        ? parsed.records
+        : [];
+
+    return rawRecords.flatMap(
+      (value) => {
+        if (!isRecord(value)) {
+          return [];
+        }
+
+        const dividendId =
+          typeof value.id === "string"
+            ? value.id
+            : "";
+
+        const accountId =
+          typeof value.cashAccountId ===
+            "string"
+            ? value.cashAccountId
+            : "";
+
+        const netAmount =
+          normalizePositiveNumber(
+            value.netAmount,
+          );
+
+        const paymentDate =
+          normalizeIsoDate(
+            value.paymentDate,
+          );
+
+        if (
+          !dividendId ||
+          !accountId ||
+          netAmount === null ||
+          !paymentDate
+        ) {
+          return [];
+        }
+
+        const account =
+          accounts.find(
+            (item) =>
+              item.id === accountId,
+          );
+
+        if (!account) {
+          return [];
+        }
+
+        const symbol =
+          typeof value.symbol ===
+            "string"
+            ? value.symbol
+                .trim()
+                .toUpperCase()
+            : undefined;
+
+        const movement:
+          CashMovement = {
+          id:
+            `migration-dividend-${dividendId}`,
+
+          cashAccountId:
+            account.id,
+
+          cashAccountName:
+            account.name,
+
+          currency:
+            account.currency,
+
+          type: "dividend",
+
+          amount: netAmount,
+
+          date: paymentDate,
+
+          relatedId:
+            dividendId,
+
+          symbol,
+
+          note:
+            "Migrated dividend payment",
+
+          createdAt:
+            new Date().toISOString(),
+        };
+
+        return [movement];
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Unable to migrate dividend cash movements:",
+      error,
+    );
+
+    return [];
+  }
+};
+
+const createOpeningMovements = (
+  accounts: CashAccount[],
+  knownMovements: CashMovement[],
+): CashMovement[] => {
+  return accounts.flatMap(
+    (account) => {
+      const knownBalance =
+        knownMovements
+          .filter(
+            (movement) =>
+              movement.cashAccountId ===
+              account.id,
+          )
+          .reduce(
+            (total, movement) =>
+              total +
+              movement.amount,
+            0,
+          );
+
+      const openingBalance =
+        account.balance -
+        knownBalance;
+
+      if (
+        Math.abs(openingBalance) <=
+        BALANCE_TOLERANCE
+      ) {
+        return [];
+      }
+
+      const movement:
+        CashMovement = {
+        id:
+          `opening-${account.id}`,
+
+        cashAccountId:
+          account.id,
+
+        cashAccountName:
+          account.name,
+
+        currency:
+          account.currency,
+
+        type:
+          "opening_balance",
+
+        amount:
+          openingBalance,
+
+        date:
+          account.createdAt,
+
+        note:
+          "Balance before JIS cash ledger tracking",
+
+        createdAt:
+          new Date().toISOString(),
+      };
+
+      return [movement];
+    },
+  );
+};
+
+const loadMovements = (
+  accounts: CashAccount[],
+): CashMovement[] => {
+  try {
+    const stored =
+      localStorage.getItem(
+        CASH_MOVEMENTS_STORAGE_KEY,
+      );
+
+    /*
+     * Existing ledger.
+     */
+    if (stored !== null) {
+      const parsed: unknown =
+        JSON.parse(stored);
+
+      if (!Array.isArray(parsed)) {
+        saveMovements([]);
+
+        return [];
+      }
+
+      const movements =
+        sortMovements(
+          parsed
+            .map(
+              normalizeMovement,
+            )
+            .filter(
+              (
+                movement,
+              ): movement is CashMovement =>
+                movement !== null,
+            ),
+        );
+
+      saveMovements(
+        movements,
+      );
+
+      return movements;
+    }
+
+    /*
+     * First ledger launch.
+     *
+     * Recover known BUY/SELL and
+     * dividend movements first.
+     */
+    const investmentMovements =
+      migrateInvestmentMovements(
+        accounts,
+      );
+
+    const dividendMovements =
+      migrateDividendMovements(
+        accounts,
+      );
+
+    const knownMovements = [
+      ...investmentMovements,
+      ...dividendMovements,
+    ];
+
+    /*
+     * Reconcile the remaining account
+     * balance as the opening balance.
+     *
+     * Example:
+     *
+     * Tyba Cash current = 1,104.88
+     * Known IXN sale    = 1,000.00
+     *
+     * Opening balance   =   104.88
+     */
+    const openingMovements =
+      createOpeningMovements(
+        accounts,
+        knownMovements,
+      );
+
+    const movements =
+      sortMovements([
+        ...knownMovements,
+        ...openingMovements,
+      ]);
+
+    saveMovements(
+      movements,
+    );
+
+    return movements;
+  } catch (error) {
+    console.error(
+      "Unable to load cash movements:",
+      error,
+    );
+
+    return [];
+  }
+};
 
 const normalizeRates = (
   value: unknown,
@@ -381,55 +1031,46 @@ const normalizeRates = (
 const saveFxData = (
   fxData: StoredFxData,
 ) => {
-  try {
-    localStorage.setItem(
-      CASH_FX_STORAGE_KEY,
-      JSON.stringify(fxData),
-    );
-  } catch (error) {
-    console.error(
-      "Unable to save FX rates:",
-      error,
-    );
-  }
+  localStorage.setItem(
+    CASH_FX_STORAGE_KEY,
+    JSON.stringify(fxData),
+  );
 };
 
 const loadFxData =
   (): StoredFxData | null => {
     try {
-      const storedFxData =
+      const stored =
         localStorage.getItem(
           CASH_FX_STORAGE_KEY,
         );
 
-      if (!storedFxData) {
+      if (!stored) {
         return null;
       }
 
-      const parsedFxData: unknown =
-        JSON.parse(storedFxData);
+      const parsed: unknown =
+        JSON.parse(stored);
 
-      if (
-        !isRecord(parsedFxData)
-      ) {
+      if (!isRecord(parsed)) {
         return null;
       }
 
       const baseCurrency =
         isSupportedCurrency(
-          parsedFxData.baseCurrency,
+          parsed.baseCurrency,
         )
-          ? parsedFxData.baseCurrency
+          ? parsed.baseCurrency
           : null;
 
       const updatedAt =
         normalizeIsoDate(
-          parsedFxData.updatedAt,
+          parsed.updatedAt,
         );
 
       const rates =
         normalizeRates(
-          parsedFxData.rates,
+          parsed.rates,
         );
 
       if (
@@ -496,6 +1137,14 @@ const normalizeInput = (
   };
 };
 
+const initialAccounts =
+  loadAccounts();
+
+const initialMovements =
+  loadMovements(
+    initialAccounts,
+  );
+
 const initialFxData =
   loadFxData();
 
@@ -503,22 +1152,28 @@ const useCashStore =
   create<CashStore>(
     (set, get) => ({
       accounts:
-        loadAccounts(),
+        initialAccounts,
+
+      movements:
+        initialMovements,
 
       fxBaseCurrency:
         initialFxData?.baseCurrency ??
         null,
 
       fxRates:
-        initialFxData?.rates ?? {},
+        initialFxData?.rates ??
+        {},
 
       fxUpdatedAt:
         initialFxData?.updatedAt ??
         null,
 
-      fxSyncStatus: "idle",
+      fxSyncStatus:
+        "idle",
 
-      fxSyncError: null,
+      fxSyncError:
+        null,
 
       addAccount: (input) => {
         const normalizedInput =
@@ -527,6 +1182,7 @@ const useCashStore =
         if (!normalizedInput) {
           return {
             success: false,
+
             error:
               "Enter valid cash account information.",
           };
@@ -535,9 +1191,9 @@ const useCashStore =
         const now =
           new Date().toISOString();
 
-        const nextAccount:
+        const account:
           CashAccount = {
-          id: createAccountId(),
+          id: createId(),
 
           ...normalizedInput,
 
@@ -545,20 +1201,66 @@ const useCashStore =
           updatedAt: now,
         };
 
-        set((state) => {
-          const nextAccounts = [
-            ...state.accounts,
-            nextAccount,
-          ];
+        const nextAccounts = [
+          ...get().accounts,
+          account,
+        ];
 
-          saveAccounts(
-            nextAccounts,
-          );
+        let nextMovements =
+          get().movements;
 
-          return {
-            accounts:
-              nextAccounts,
+        if (
+          account.balance >
+          BALANCE_TOLERANCE
+        ) {
+          const openingMovement:
+            CashMovement = {
+            id: createId(),
+
+            cashAccountId:
+              account.id,
+
+            cashAccountName:
+              account.name,
+
+            currency:
+              account.currency,
+
+            type:
+              "opening_balance",
+
+            amount:
+              account.balance,
+
+            date: now,
+
+            note:
+              "Initial account balance",
+
+            createdAt: now,
           };
+
+          nextMovements =
+            sortMovements([
+              openingMovement,
+              ...nextMovements,
+            ]);
+        }
+
+        saveAccounts(
+          nextAccounts,
+        );
+
+        saveMovements(
+          nextMovements,
+        );
+
+        set({
+          accounts:
+            nextAccounts,
+
+          movements:
+            nextMovements,
         });
 
         return {
@@ -576,48 +1278,133 @@ const useCashStore =
         if (!normalizedInput) {
           return {
             success: false,
+
             error:
               "Enter valid cash account information.",
           };
         }
 
-        const existingAccount =
+        const existing =
           get().accounts.find(
             (account) =>
               account.id === id,
           );
 
-        if (!existingAccount) {
+        if (!existing) {
           return {
             success: false,
+
             error:
               "Cash account not found.",
           };
         }
 
-        set((state) => {
-          const nextAccounts =
-            state.accounts.map(
-              (account) =>
-                account.id === id
-                  ? {
-                      ...account,
-                      ...normalizedInput,
-
-                      updatedAt:
-                        new Date().toISOString(),
-                    }
-                  : account,
-            );
-
-          saveAccounts(
-            nextAccounts,
+        const existingMovements =
+          get().movements.filter(
+            (movement) =>
+              movement.cashAccountId ===
+              id,
           );
 
+        if (
+          existingMovements.length > 0 &&
+          normalizedInput.currency !==
+            existing.currency
+        ) {
           return {
-            accounts:
-              nextAccounts,
+            success: false,
+
+            error:
+              "Currency cannot be changed after an account has cash movements.",
           };
+        }
+
+        const balanceDifference =
+          normalizedInput.balance -
+          existing.balance;
+
+        const now =
+          new Date().toISOString();
+
+        const nextAccounts =
+          get().accounts.map(
+            (account) =>
+              account.id === id
+                ? {
+                    ...account,
+                    ...normalizedInput,
+                    updatedAt: now,
+                  }
+                : account,
+          );
+
+        let nextMovements =
+          get().movements.map(
+            (movement) =>
+              movement.cashAccountId ===
+              id
+                ? {
+                    ...movement,
+
+                    cashAccountName:
+                      normalizedInput.name,
+                  }
+                : movement,
+          );
+
+        if (
+          Math.abs(
+            balanceDifference,
+          ) >
+          BALANCE_TOLERANCE
+        ) {
+          const adjustment:
+            CashMovement = {
+            id: createId(),
+
+            cashAccountId:
+              id,
+
+            cashAccountName:
+              normalizedInput.name,
+
+            currency:
+              normalizedInput.currency,
+
+            type: "adjustment",
+
+            amount:
+              balanceDifference,
+
+            date: now,
+
+            note:
+              "Manual balance correction",
+
+            createdAt: now,
+          };
+
+          nextMovements =
+            sortMovements([
+              adjustment,
+              ...nextMovements,
+            ]);
+        }
+
+        saveAccounts(
+          nextAccounts,
+        );
+
+        saveMovements(
+          nextMovements,
+        );
+
+        set({
+          accounts:
+            nextAccounts,
+
+          movements:
+            nextMovements,
         });
 
         return {
@@ -626,35 +1413,50 @@ const useCashStore =
       },
 
       removeAccount: (id) => {
-        set((state) => {
-          const nextAccounts =
-            state.accounts.filter(
-              (account) =>
-                account.id !== id,
-            );
-
-          saveAccounts(
-            nextAccounts,
+        const nextAccounts =
+          get().accounts.filter(
+            (account) =>
+              account.id !== id,
           );
 
-          return {
-            accounts:
-              nextAccounts,
-          };
+        saveAccounts(
+          nextAccounts,
+        );
+
+        /*
+         * Keep historical movements.
+         * They are part of the audit
+         * trail even if the account is
+         * later removed.
+         */
+        set({
+          accounts:
+            nextAccounts,
         });
       },
 
       adjustAccountBalance: (
         id,
         amount,
+        movement = {},
       ) => {
         if (
           !Number.isFinite(amount)
         ) {
           return {
             success: false,
+
             error:
               "Invalid cash movement.",
+          };
+        }
+
+        if (
+          Math.abs(amount) <=
+          BALANCE_TOLERANCE
+        ) {
+          return {
+            success: true,
           };
         }
 
@@ -667,13 +1469,15 @@ const useCashStore =
         if (!account) {
           return {
             success: false,
+
             error:
               "Cash account not found.",
           };
         }
 
         const nextBalance =
-          account.balance + amount;
+          account.balance +
+          amount;
 
         if (
           nextBalance <
@@ -681,6 +1485,7 @@ const useCashStore =
         ) {
           return {
             success: false,
+
             error:
               "The selected cash account does not have enough available balance.",
           };
@@ -692,36 +1497,168 @@ const useCashStore =
             ? 0
             : nextBalance;
 
-        set((state) => {
-          const nextAccounts =
-            state.accounts.map(
-              (item) =>
-                item.id === id
-                  ? {
-                      ...item,
+        const now =
+          new Date().toISOString();
 
-                      balance:
-                        normalizedBalance,
+        const movementDate =
+          normalizeIsoDate(
+            movement.date,
+          ) ?? now;
 
-                      updatedAt:
-                        new Date().toISOString(),
-                    }
-                  : item,
-            );
+        const nextAccounts =
+          get().accounts.map(
+            (item) =>
+              item.id === id
+                ? {
+                    ...item,
 
-          saveAccounts(
-            nextAccounts,
+                    balance:
+                      normalizedBalance,
+
+                    updatedAt: now,
+                  }
+                : item,
           );
 
-          return {
-            accounts:
-              nextAccounts,
-          };
+        const cashMovement:
+          CashMovement = {
+          id: createId(),
+
+          cashAccountId:
+            account.id,
+
+          cashAccountName:
+            account.name,
+
+          currency:
+            account.currency,
+
+          type:
+            movement.type ??
+            "adjustment",
+
+          amount,
+
+          date:
+            movementDate,
+
+          relatedId:
+            movement.relatedId,
+
+          symbol:
+            movement.symbol
+              ?.trim()
+              .toUpperCase() ||
+            undefined,
+
+          note:
+            movement.note?.trim() ||
+            undefined,
+
+          createdAt: now,
+        };
+
+        const nextMovements =
+          sortMovements([
+            cashMovement,
+            ...get().movements,
+          ]);
+
+        saveAccounts(
+          nextAccounts,
+        );
+
+        saveMovements(
+          nextMovements,
+        );
+
+        set({
+          accounts:
+            nextAccounts,
+
+          movements:
+            nextMovements,
         });
 
         return {
           success: true,
         };
+      },
+
+      addExternalDeposit: (
+        accountId,
+        amount,
+        date,
+        note,
+      ) => {
+        const validAmount =
+          normalizePositiveNumber(
+            amount,
+          );
+
+        if (
+          validAmount === null
+        ) {
+          return {
+            success: false,
+
+            error:
+              "Deposit amount must be greater than zero.",
+          };
+        }
+
+        return get().adjustAccountBalance(
+          accountId,
+          validAmount,
+          {
+            type:
+              "external_deposit",
+
+            date,
+
+            note:
+              note?.trim() ||
+              "External cash contribution",
+          },
+        );
+      },
+
+      addExternalWithdrawal: (
+        accountId,
+        amount,
+        date,
+        note,
+      ) => {
+        const validAmount =
+          normalizePositiveNumber(
+            amount,
+          );
+
+        if (
+          validAmount === null
+        ) {
+          return {
+            success: false,
+
+            error:
+              "Withdrawal amount must be greater than zero.",
+          };
+        }
+
+        return get().adjustAccountBalance(
+          accountId,
+          -validAmount,
+          {
+            type:
+              "external_withdrawal",
+
+            date,
+
+            note:
+              note?.trim() ||
+              "External cash withdrawal",
+          },
+        );
       },
 
       refreshFxRates: async (
@@ -733,6 +1670,7 @@ const useCashStore =
         ) {
           return {
             success: false,
+
             errors: {},
 
             error:
@@ -754,7 +1692,8 @@ const useCashStore =
           fxSyncStatus:
             "loading",
 
-          fxSyncError: null,
+          fxSyncError:
+            null,
         });
 
         try {
@@ -830,7 +1769,8 @@ const useCashStore =
               : "Unable to update exchange rates.";
 
           set({
-            fxSyncStatus: "error",
+            fxSyncStatus:
+              "error",
 
             fxSyncError:
               message,

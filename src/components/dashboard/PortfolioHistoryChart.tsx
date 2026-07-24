@@ -4,6 +4,7 @@ import {
   type PointerEvent,
 } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
+import useCashStore from "../../store/cashStore";
 import useWealthHistoryStore, {
   type WealthSnapshot,
 } from "../../store/wealthHistoryStore";
@@ -16,24 +17,17 @@ type HistoryRange =
 
 type ChartPoint = {
   snapshot: WealthSnapshot;
-
   x: number;
-
   netWorthY: number;
-
   investmentValueY: number;
 };
 
 const CHART_WIDTH = 900;
-
 const CHART_HEIGHT = 320;
 
 const PADDING_LEFT = 72;
-
 const PADDING_RIGHT = 24;
-
 const PADDING_TOP = 24;
-
 const PADDING_BOTTOM = 46;
 
 const shortDateFormatter =
@@ -111,9 +105,10 @@ const groupSnapshotsByDay = (
 
   snapshots.forEach(
     (snapshot) => {
-      const date = new Date(
-        snapshot.timestamp,
-      );
+      const date =
+        new Date(
+          snapshot.timestamp,
+        );
 
       const dayKey = [
         date.getFullYear(),
@@ -127,10 +122,6 @@ const groupSnapshotsByDay = (
         ).padStart(2, "0"),
       ].join("-");
 
-      /*
-       * The latest snapshot of
-       * each day wins.
-       */
       snapshotsByDay.set(
         dayKey,
         snapshot,
@@ -168,9 +159,9 @@ const limitChartPoints = (
   const sampledSnapshots =
     Array.from(
       {
-        length: maximumPoints,
+        length:
+          maximumPoints,
       },
-
       (_, index) => {
         const snapshotIndex =
           Math.round(
@@ -201,7 +192,6 @@ const limitChartPoints = (
 
 const createPath = (
   points: ChartPoint[],
-
   property:
     | "netWorthY"
     | "investmentValueY",
@@ -232,13 +222,33 @@ const PortfolioHistoryChart =
           state.snapshots,
       );
 
+    const cashMovements =
+      useCashStore(
+        (state) =>
+          state.movements,
+      );
+
+    const fxBaseCurrency =
+      useCashStore(
+        (state) =>
+          state.fxBaseCurrency,
+      );
+
+    const fxRates =
+      useCashStore(
+        (state) =>
+          state.fxRates,
+      );
+
     const {
       currency,
+
       formatCurrency,
+
       formatSignedCurrency,
+
       formatCompactCurrency,
-    } =
-      useCurrencyFormatter();
+    } = useCurrencyFormatter();
 
     const [range, setRange] =
       useState<HistoryRange>(
@@ -252,12 +262,44 @@ const PortfolioHistoryChart =
       number | null
     >(null);
 
+    const convertMovementToReportingCurrency =
+      (
+        amount: number,
+        sourceCurrency:
+          typeof currency,
+      ) => {
+        if (
+          sourceCurrency ===
+          currency
+        ) {
+          return amount;
+        }
+
+        if (
+          fxBaseCurrency !==
+          currency
+        ) {
+          return null;
+        }
+
+        const rate =
+          fxRates[sourceCurrency];
+
+        if (
+          rate === undefined ||
+          !Number.isFinite(
+            rate,
+          ) ||
+          rate <= 0
+        ) {
+          return null;
+        }
+
+        return amount * rate;
+      };
+
     const chartData =
       useMemo(() => {
-        /*
-         * Never mix currencies on
-         * the same historical chart.
-         */
         const currencySnapshots =
           snapshots.filter(
             (snapshot) =>
@@ -308,7 +350,6 @@ const PortfolioHistoryChart =
           chartSnapshots.flatMap(
             (snapshot) => [
               snapshot.netWorth,
-
               snapshot.investmentValue,
             ],
           );
@@ -399,11 +440,8 @@ const PortfolioHistoryChart =
 
               return {
                 snapshot,
-
                 x,
-
                 netWorthY,
-
                 investmentValueY,
               };
             },
@@ -418,6 +456,16 @@ const PortfolioHistoryChart =
               1
           ];
 
+        const firstTime =
+          new Date(
+            firstSnapshot.timestamp,
+          ).getTime();
+
+        const latestTime =
+          new Date(
+            latestSnapshot.timestamp,
+          ).getTime();
+
         const periodChange =
           latestSnapshot.netWorth -
           firstSnapshot.netWorth;
@@ -430,26 +478,95 @@ const PortfolioHistoryChart =
               100
             : 0;
 
-        const highestValue =
-          Math.max(
-            ...chartSnapshots.map(
-              (snapshot) =>
-                snapshot.netWorth,
-            ),
+        let externalDeposits = 0;
+        let externalWithdrawals = 0;
+        let missingContributionFx =
+          false;
+
+        cashMovements
+          .filter(
+            (movement) => {
+              if (
+                movement.type !==
+                  "external_deposit" &&
+                movement.type !==
+                  "external_withdrawal"
+              ) {
+                return false;
+              }
+
+              const movementTime =
+                new Date(
+                  movement.date,
+                ).getTime();
+
+              return (
+                Number.isFinite(
+                  movementTime,
+                ) &&
+                movementTime >
+                  firstTime &&
+                movementTime <=
+                  latestTime
+              );
+            },
+          )
+          .forEach(
+            (movement) => {
+              const converted =
+                convertMovementToReportingCurrency(
+                  Math.abs(
+                    movement.amount,
+                  ),
+                  movement.currency,
+                );
+
+              if (
+                converted === null
+              ) {
+                missingContributionFx =
+                  true;
+                return;
+              }
+
+              if (
+                movement.type ===
+                "external_deposit"
+              ) {
+                externalDeposits +=
+                  converted;
+              } else {
+                externalWithdrawals +=
+                  converted;
+              }
+            },
           );
 
-        const lowestValue =
-          Math.min(
-            ...chartSnapshots.map(
-              (snapshot) =>
-                snapshot.netWorth,
-            ),
-          );
+        const netExternalFlow =
+          externalDeposits -
+          externalWithdrawals;
+
+        const adjustedGrowth =
+          missingContributionFx
+            ? null
+            : periodChange -
+              netExternalFlow;
+
+        const adjustedGrowthPercentage =
+          adjustedGrowth !==
+            null &&
+          firstSnapshot.netWorth !==
+            0
+            ? (adjustedGrowth /
+                firstSnapshot.netWorth) *
+              100
+            : null;
 
         const gridLines =
           Array.from(
-            { length: 5 },
-
+            {
+              length: 5,
+            },
             (_, index) => {
               const progress =
                 index / 4;
@@ -492,16 +609,27 @@ const PortfolioHistoryChart =
 
           periodChangePercentage,
 
-          highestValue,
+          externalDeposits,
 
-          lowestValue,
+          externalWithdrawals,
+
+          netExternalFlow,
+
+          adjustedGrowth,
+
+          adjustedGrowthPercentage,
+
+          missingContributionFx,
 
           latestSnapshot,
 
           plotWidth,
         };
       }, [
+        cashMovements,
         currency,
+        fxBaseCurrency,
+        fxRates,
         range,
         snapshots,
       ]);
@@ -514,6 +642,14 @@ const PortfolioHistoryChart =
         chartData.points.length ===
           0
       ) {
+        return;
+      }
+
+      if (
+        chartData.points.length ===
+        1
+      ) {
+        setHoveredIndex(0);
         return;
       }
 
@@ -544,7 +680,6 @@ const PortfolioHistoryChart =
             nextIndex,
             0,
           ),
-
           chartData.points.length -
             1,
         ),
@@ -559,33 +694,49 @@ const PortfolioHistoryChart =
           ] ?? null
         : null;
 
-    const performanceClassName =
+    const changeClassName =
       chartData &&
-      chartData.periodChange >
-        0
+      chartData.periodChange > 0
         ? "text-emerald-600"
         : chartData &&
-            chartData.periodChange <
+            chartData.periodChange < 0
+          ? "text-red-600"
+          : "text-slate-900";
+
+    const adjustedGrowthClassName =
+      chartData &&
+      chartData.adjustedGrowth !==
+        null &&
+      chartData.adjustedGrowth > 0
+        ? "text-emerald-600"
+        : chartData &&
+            chartData.adjustedGrowth !==
+              null &&
+            chartData.adjustedGrowth <
               0
           ? "text-red-600"
-          : "text-slate-700";
+          : "text-slate-900";
 
     return (
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+            <p className="text-sm font-medium text-slate-500">
+              Wealth history
+            </p>
+
+            <h2 className="mt-1 text-lg font-semibold text-slate-900">
               Net worth evolution
             </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Historical evolution of
-              investments and total
-              wealth including cash.
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Separate external capital
+              from growth generated
+              inside your portfolio.
             </p>
           </div>
 
-          <div className="inline-flex self-start rounded-xl bg-slate-100 p-1">
+          <div className="flex rounded-xl bg-slate-100 p-1">
             {rangeOptions.map(
               (option) => (
                 <button
@@ -609,7 +760,9 @@ const PortfolioHistoryChart =
                       : "text-slate-500 hover:text-slate-900"
                   }`}
                 >
-                  {option.label}
+                  {
+                    option.label
+                  }
                 </button>
               ),
             )}
@@ -617,336 +770,372 @@ const PortfolioHistoryChart =
         </div>
 
         {!chartData ? (
-          <div className="flex min-h-72 items-center justify-center p-8 text-center">
+          <div className="flex min-h-80 items-center justify-center p-8 text-center">
             <div>
               <h3 className="font-semibold text-slate-900">
-                No wealth history
-                yet
+                No wealth history yet
               </h3>
 
-              <p className="mt-2 max-w-sm text-sm text-slate-500">
+              <p className="mt-2 text-sm text-slate-500">
                 JIS will begin
                 recording your net
-                worth in{" "}
-                {currency} from now
-                on.
+                worth in {currency}.
               </p>
             </div>
           </div>
         ) : (
           <>
-            <div className="grid gap-4 px-5 pt-5 sm:grid-cols-3">
-              <div>
-                <p className="text-xs font-medium text-slate-400">
-                  Period change
+            <div className="grid gap-4 border-b border-slate-100 bg-slate-50/50 p-5 sm:grid-cols-2 xl:grid-cols-4">
+              <article className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-medium text-slate-500">
+                  Net worth change
                 </p>
 
                 <p
-                  className={`mt-1 text-lg font-bold ${performanceClassName}`}
+                  className={`mt-2 text-lg font-bold ${changeClassName}`}
                 >
                   {formatSignedCurrency(
                     chartData.periodChange,
                   )}
                 </p>
 
-                <p
-                  className={`mt-0.5 text-xs font-semibold ${performanceClassName}`}
-                >
-                  {chartData
-                    .periodChangePercentage >
+                <p className="mt-1 text-xs text-slate-400">
+                  {chartData.periodChangePercentage >
                   0
                     ? "+"
                     : ""}
-
                   {chartData.periodChangePercentage.toFixed(
                     2,
                   )}
                   %
                 </p>
-              </div>
+              </article>
 
-              <div>
-                <p className="text-xs font-medium text-slate-400">
-                  Period high
+              <article className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-medium text-slate-500">
+                  Net external flow
                 </p>
 
-                <p className="mt-1 text-lg font-bold text-slate-900">
-                  {formatCurrency(
-                    chartData.highestValue,
-                  )}
+                <p className="mt-2 text-lg font-bold text-blue-600">
+                  {chartData.missingContributionFx
+                    ? "FX pending"
+                    : formatSignedCurrency(
+                        chartData.netExternalFlow,
+                      )}
                 </p>
-              </div>
 
-              <div>
-                <p className="text-xs font-medium text-slate-400">
+                <p className="mt-1 text-xs text-slate-400">
+                  Deposits minus
+                  withdrawals.
+                </p>
+              </article>
+
+              <article className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-medium text-slate-500">
+                  Growth excluding
+                  external money
+                </p>
+
+                <p
+                  className={`mt-2 text-lg font-bold ${adjustedGrowthClassName}`}
+                >
+                  {chartData.adjustedGrowth ===
+                  null
+                    ? "FX pending"
+                    : formatSignedCurrency(
+                        chartData.adjustedGrowth,
+                      )}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  {chartData.adjustedGrowthPercentage ===
+                  null
+                    ? "Waiting for FX"
+                    : `${
+                        chartData.adjustedGrowthPercentage >
+                        0
+                          ? "+"
+                          : ""
+                      }${chartData.adjustedGrowthPercentage.toFixed(
+                        2,
+                      )}%`}
+                </p>
+              </article>
+
+              <article className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-medium text-slate-500">
                   Current cash
                 </p>
 
-                <p className="mt-1 text-lg font-bold text-slate-900">
+                <p className="mt-2 text-lg font-bold text-slate-900">
                   {formatCurrency(
                     chartData
                       .latestSnapshot
                       .cashValue,
                   )}
                 </p>
-              </div>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Latest historical
+                  snapshot.
+                </p>
+              </article>
             </div>
 
-            <div className="relative px-2 pb-2 pt-4 sm:px-5">
-              <svg
-                viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-                role="img"
-                aria-label="Net worth history chart"
-                className="h-auto w-full touch-none"
-                onPointerMove={
-                  handlePointerMove
-                }
-                onPointerLeave={() =>
-                  setHoveredIndex(
-                    null,
-                  )
-                }
-              >
-                {chartData.gridLines.map(
-                  (gridLine) => (
-                    <g
-                      key={
-                        gridLine.y
-                      }
-                    >
+            <div className="p-5 sm:p-6">
+              <div className="overflow-x-auto">
+                <svg
+                  viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+                  className="min-w-[720px] w-full touch-none"
+                  role="img"
+                  aria-label="Historical net worth and investment value"
+                  onPointerMove={
+                    handlePointerMove
+                  }
+                  onPointerLeave={() =>
+                    setHoveredIndex(
+                      null,
+                    )
+                  }
+                >
+                  {chartData.gridLines.map(
+                    (
+                      gridLine,
+                      index,
+                    ) => (
+                      <g
+                        key={
+                          index
+                        }
+                      >
+                        <line
+                          x1={
+                            PADDING_LEFT
+                          }
+                          x2={
+                            CHART_WIDTH -
+                            PADDING_RIGHT
+                          }
+                          y1={
+                            gridLine.y
+                          }
+                          y2={
+                            gridLine.y
+                          }
+                          stroke="currentColor"
+                          className="text-slate-100"
+                        />
+
+                        <text
+                          x={
+                            PADDING_LEFT -
+                            12
+                          }
+                          y={
+                            gridLine.y +
+                            4
+                          }
+                          textAnchor="end"
+                          className="fill-slate-400 text-[10px]"
+                        >
+                          {formatCompactCurrency(
+                            gridLine.value,
+                          )}
+                        </text>
+                      </g>
+                    ),
+                  )}
+
+                  <path
+                    d={
+                      chartData.netWorthPath
+                    }
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-blue-600"
+                  />
+
+                  <path
+                    d={
+                      chartData.investmentPath
+                    }
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="7 6"
+                    className="text-slate-400"
+                  />
+
+                  {chartData.points.length ===
+                    1 && (
+                    <>
+                      <circle
+                        cx={
+                          chartData
+                            .points[0]
+                            .x
+                        }
+                        cy={
+                          chartData
+                            .points[0]
+                            .netWorthY
+                        }
+                        r="5"
+                        fill="currentColor"
+                        className="text-blue-600"
+                      />
+
+                      <circle
+                        cx={
+                          chartData
+                            .points[0]
+                            .x
+                        }
+                        cy={
+                          chartData
+                            .points[0]
+                            .investmentValueY
+                        }
+                        r="4"
+                        fill="currentColor"
+                        className="text-slate-400"
+                      />
+                    </>
+                  )}
+
+                  {hoveredPoint && (
+                    <>
                       <line
                         x1={
-                          PADDING_LEFT
-                        }
-                        y1={
-                          gridLine.y
+                          hoveredPoint.x
                         }
                         x2={
-                          CHART_WIDTH -
-                          PADDING_RIGHT
+                          hoveredPoint.x
+                        }
+                        y1={
+                          PADDING_TOP
                         }
                         y2={
-                          gridLine.y
+                          CHART_HEIGHT -
+                          PADDING_BOTTOM
                         }
                         stroke="currentColor"
-                        className="text-slate-100"
+                        strokeDasharray="4 4"
+                        className="text-slate-300"
                       />
+
+                      <circle
+                        cx={
+                          hoveredPoint.x
+                        }
+                        cy={
+                          hoveredPoint.netWorthY
+                        }
+                        r="5"
+                        fill="currentColor"
+                        className="text-blue-600"
+                      />
+
+                      <circle
+                        cx={
+                          hoveredPoint.x
+                        }
+                        cy={
+                          hoveredPoint.investmentValueY
+                        }
+                        r="4"
+                        fill="currentColor"
+                        className="text-slate-500"
+                      />
+                    </>
+                  )}
+
+                  {chartData.snapshots.length >
+                    0 && (
+                    <>
+                      <text
+                        x={
+                          PADDING_LEFT
+                        }
+                        y={
+                          CHART_HEIGHT -
+                          14
+                        }
+                        textAnchor="start"
+                        className="fill-slate-400 text-[10px]"
+                      >
+                        {shortDateFormatter.format(
+                          new Date(
+                            chartData
+                              .snapshots[0]
+                              .timestamp,
+                          ),
+                        )}
+                      </text>
 
                       <text
                         x={
-                          PADDING_LEFT -
-                          10
+                          CHART_WIDTH /
+                          2
                         }
                         y={
-                          gridLine.y +
-                          4
+                          CHART_HEIGHT -
+                          14
                         }
-                        textAnchor="end"
-                        className="fill-slate-400 text-[11px]"
+                        textAnchor="middle"
+                        className="fill-slate-400 text-[10px]"
                       >
-                        {formatCompactCurrency(
-                          gridLine.value,
+                        {shortDateFormatter.format(
+                          new Date(
+                            chartData.snapshots[
+                              Math.floor(
+                                chartData
+                                  .snapshots
+                                  .length /
+                                  2,
+                              )
+                            ].timestamp,
+                          ),
                         )}
                       </text>
-                    </g>
-                  ),
-                )}
 
-                <path
-                  d={
-                    chartData.investmentPath
-                  }
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeDasharray="6 6"
-                  className="text-slate-400"
-                />
-
-                <path
-                  d={
-                    chartData.netWorthPath
-                  }
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-blue-600"
-                />
-
-                {chartData.points
-                  .length === 1 && (
-                  <>
-                    <circle
-                      cx={
-                        chartData
-                          .points[0]
-                          .x
-                      }
-                      cy={
-                        chartData
-                          .points[0]
-                          .netWorthY
-                      }
-                      r="5"
-                      fill="currentColor"
-                      className="text-blue-600"
-                    />
-
-                    <circle
-                      cx={
-                        chartData
-                          .points[0]
-                          .x
-                      }
-                      cy={
-                        chartData
-                          .points[0]
-                          .investmentValueY
-                      }
-                      r="4"
-                      fill="currentColor"
-                      className="text-slate-400"
-                    />
-                  </>
-                )}
-
-                {hoveredPoint && (
-                  <g>
-                    <line
-                      x1={
-                        hoveredPoint.x
-                      }
-                      y1={
-                        PADDING_TOP
-                      }
-                      x2={
-                        hoveredPoint.x
-                      }
-                      y2={
-                        CHART_HEIGHT -
-                        PADDING_BOTTOM
-                      }
-                      stroke="currentColor"
-                      strokeWidth="1"
-                      strokeDasharray="4 4"
-                      className="text-slate-300"
-                    />
-
-                    <circle
-                      cx={
-                        hoveredPoint.x
-                      }
-                      cy={
-                        hoveredPoint.netWorthY
-                      }
-                      r="6"
-                      fill="white"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      className="text-blue-600"
-                    />
-
-                    <circle
-                      cx={
-                        hoveredPoint.x
-                      }
-                      cy={
-                        hoveredPoint.investmentValueY
-                      }
-                      r="5"
-                      fill="white"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="text-slate-400"
-                    />
-                  </g>
-                )}
-
-                {chartData.snapshots
-                  .length > 0 && (
-                  <>
-                    <text
-                      x={
-                        PADDING_LEFT
-                      }
-                      y={
-                        CHART_HEIGHT -
-                        12
-                      }
-                      textAnchor="start"
-                      className="fill-slate-400 text-[11px]"
-                    >
-                      {shortDateFormatter.format(
-                        new Date(
-                          chartData
-                            .snapshots[0]
-                            .timestamp,
-                        ),
-                      )}
-                    </text>
-
-                    <text
-                      x={
-                        CHART_WIDTH /
-                        2
-                      }
-                      y={
-                        CHART_HEIGHT -
-                        12
-                      }
-                      textAnchor="middle"
-                      className="fill-slate-400 text-[11px]"
-                    >
-                      {shortDateFormatter.format(
-                        new Date(
-                          chartData
-                            .snapshots[
-                            Math.floor(
+                      <text
+                        x={
+                          CHART_WIDTH -
+                          PADDING_RIGHT
+                        }
+                        y={
+                          CHART_HEIGHT -
+                          14
+                        }
+                        textAnchor="end"
+                        className="fill-slate-400 text-[10px]"
+                      >
+                        {shortDateFormatter.format(
+                          new Date(
+                            chartData
+                              .snapshots[
                               chartData
                                 .snapshots
-                                .length /
-                                2,
-                            )
-                          ]
-                            .timestamp,
-                        ),
-                      )}
-                    </text>
-
-                    <text
-                      x={
-                        CHART_WIDTH -
-                        PADDING_RIGHT
-                      }
-                      y={
-                        CHART_HEIGHT -
-                        12
-                      }
-                      textAnchor="end"
-                      className="fill-slate-400 text-[11px]"
-                    >
-                      {shortDateFormatter.format(
-                        new Date(
-                          chartData
-                            .snapshots[
-                            chartData
-                              .snapshots
-                              .length -
-                              1
-                          ]
-                            .timestamp,
-                        ),
-                      )}
-                    </text>
-                  </>
-                )}
-              </svg>
+                                .length -
+                                1
+                            ].timestamp,
+                          ),
+                        )}
+                      </text>
+                    </>
+                  )}
+                </svg>
+              </div>
 
               {hoveredPoint && (
-                <div className="pointer-events-none absolute right-5 top-5 rounded-xl border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
-                  <p className="font-semibold text-slate-900">
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold text-slate-500">
                     {detailedDateFormatter.format(
                       new Date(
                         hoveredPoint
@@ -956,91 +1145,76 @@ const PortfolioHistoryChart =
                     )}
                   </p>
 
-                  <div className="mt-2 space-y-1.5">
-                    <div className="flex items-center justify-between gap-5">
-                      <span className="text-slate-500">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-slate-400">
                         Net worth
-                      </span>
+                      </p>
 
-                      <span className="font-semibold text-blue-600">
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
                         {formatCurrency(
                           hoveredPoint
                             .snapshot
                             .netWorth,
                         )}
-                      </span>
+                      </p>
                     </div>
 
-                    <div className="flex items-center justify-between gap-5">
-                      <span className="text-slate-500">
+                    <div>
+                      <p className="text-xs text-slate-400">
                         Investments
-                      </span>
+                      </p>
 
-                      <span className="font-semibold text-slate-700">
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
                         {formatCurrency(
                           hoveredPoint
                             .snapshot
                             .investmentValue,
                         )}
-                      </span>
+                      </p>
                     </div>
 
-                    <div className="flex items-center justify-between gap-5">
-                      <span className="text-slate-500">
+                    <div>
+                      <p className="text-xs text-slate-400">
                         Cash
-                      </span>
+                      </p>
 
-                      <span className="font-semibold text-slate-700">
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
                         {formatCurrency(
                           hoveredPoint
                             .snapshot
                             .cashValue,
                         )}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-5">
-                      <span className="text-slate-500">
-                        Investment
-                        return
-                      </span>
-
-                      <span className="font-semibold text-slate-700">
-                        {hoveredPoint
-                          .snapshot
-                          .investmentReturn >
-                        0
-                          ? "+"
-                          : ""}
-
-                        {hoveredPoint.snapshot.investmentReturn.toFixed(
-                          2,
-                        )}
-                        %
-                      </span>
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
-            </div>
 
-            <div className="flex flex-wrap gap-5 border-t border-slate-100 px-5 py-4 text-xs text-slate-500">
-              <div className="flex items-center gap-2">
-                <span className="h-0.5 w-5 rounded-full bg-blue-600" />
+              <div className="mt-5 flex flex-wrap gap-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <span className="h-0.5 w-5 bg-blue-600" />
+                  Net worth
+                </div>
 
-                Net worth
+                <div className="flex items-center gap-2">
+                  <span className="h-0.5 w-5 border-t-2 border-dashed border-slate-400" />
+                  Investments
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="h-0.5 w-5 border-t-2 border-dashed border-slate-400" />
-
-                Investments
-              </div>
-
-              <p className="basis-full text-[11px] leading-5 text-slate-400">
-                Older snapshots created
-                before cash tracking may
-                contain investments only.
+              <p className="mt-4 text-xs leading-5 text-slate-400">
+                Growth excluding
+                external money equals
+                the change in Net Worth
+                minus deposits plus
+                external withdrawals
+                during the selected
+                period. ETF purchases,
+                ETF sales and dividends
+                remain inside JIS and
+                are not classified as
+                contributions.
               </p>
             </div>
           </>
