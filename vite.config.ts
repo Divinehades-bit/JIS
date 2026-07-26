@@ -167,13 +167,6 @@ export default defineConfig(
         tailwindcss(),
 
         VitePWA({
-          /*
-           * JIS contains financial
-           * forms, so updates should
-           * not suddenly reload the
-           * application while data is
-           * being entered.
-           */
           registerType:
             "prompt",
 
@@ -186,14 +179,13 @@ export default defineConfig(
           manifest: {
             id: "/",
 
-            name:
-              "Jake Investment System",
+            name: "JIS",
 
             short_name:
               "JIS",
 
             description:
-              "Personal investment, cash flow and wealth tracking system.",
+              "Jake Investment System - Personal investment, cash flow and wealth tracking system.",
 
             start_url: "/",
 
@@ -237,7 +229,8 @@ export default defineConfig(
                   "512x512",
                 type:
                   "image/png",
-                purpose: "any",
+                purpose:
+                  "any",
               },
               {
                 src:
