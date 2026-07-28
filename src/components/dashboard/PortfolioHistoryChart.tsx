@@ -4,7 +4,9 @@ import {
   type PointerEvent,
 } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
-import useCashStore from "../../store/cashStore";
+import useCashStore, {
+  type CashMovement,
+} from "../../store/cashStore";
 import useWealthHistoryStore, {
   type WealthSnapshot,
 } from "../../store/wealthHistoryStore";
@@ -17,8 +19,11 @@ type HistoryRange =
 
 type ChartPoint = {
   snapshot: WealthSnapshot;
+
   x: number;
+
   netWorthY: number;
+
   investmentValueY: number;
 };
 
@@ -29,6 +34,12 @@ const PADDING_LEFT = 72;
 const PADDING_RIGHT = 24;
 const PADDING_TOP = 24;
 const PADDING_BOTTOM = 46;
+
+const BALANCE_TOLERANCE =
+  0.00000001;
+
+const REVERSAL_NOTE_PREFIX =
+  "JIS reversal:";
 
 const shortDateFormatter =
   new Intl.DateTimeFormat(
@@ -69,6 +80,32 @@ const rangeOptions: Array<{
     label: "All",
   },
 ];
+
+const isReversalMovement = (
+  movement: CashMovement,
+) => {
+  return (
+    movement.type === "adjustment" &&
+    Boolean(movement.relatedId) &&
+    Boolean(
+      movement.note?.startsWith(
+        REVERSAL_NOTE_PREFIX,
+      ),
+    )
+  );
+};
+
+const isExternalFlowMovement = (
+  movement: CashMovement,
+) => {
+  return (
+    movement.type ===
+      "external_deposit" ||
+    movement.type ===
+      "external_withdrawal" ||
+    isReversalMovement(movement)
+  );
+};
 
 const getRangeStart = (
   range: HistoryRange,
@@ -122,6 +159,10 @@ const groupSnapshotsByDay = (
         ).padStart(2, "0"),
       ].join("-");
 
+      /*
+       * Latest snapshot of
+       * each day wins.
+       */
       snapshotsByDay.set(
         dayKey,
         snapshot,
@@ -300,6 +341,10 @@ const PortfolioHistoryChart =
 
     const chartData =
       useMemo(() => {
+        /*
+         * Never mix reporting
+         * currencies on one chart.
+         */
         const currencySnapshots =
           snapshots.filter(
             (snapshot) =>
@@ -478,8 +523,24 @@ const PortfolioHistoryChart =
               100
             : 0;
 
-        let externalDeposits = 0;
-        let externalWithdrawals = 0;
+        /*
+         * External-flow accounting.
+         *
+         * Original deposits and
+         * withdrawals use their signed
+         * Cash Ledger amount.
+         *
+         * Reversal adjustments also
+         * use their signed amount on
+         * the actual reversal date.
+         *
+         * This is crucial when an
+         * original entry and its
+         * correction fall in different
+         * reporting periods.
+         */
+        let netExternalFlow = 0;
+
         let missingContributionFx =
           false;
 
@@ -487,10 +548,9 @@ const PortfolioHistoryChart =
           .filter(
             (movement) => {
               if (
-                movement.type !==
-                  "external_deposit" &&
-                movement.type !==
-                  "external_withdrawal"
+                !isExternalFlowMovement(
+                  movement,
+                )
               ) {
                 return false;
               }
@@ -515,9 +575,7 @@ const PortfolioHistoryChart =
             (movement) => {
               const converted =
                 convertMovementToReportingCurrency(
-                  Math.abs(
-                    movement.amount,
-                  ),
+                  movement.amount,
                   movement.currency,
                 );
 
@@ -526,26 +584,25 @@ const PortfolioHistoryChart =
               ) {
                 missingContributionFx =
                   true;
+
                 return;
               }
 
-              if (
-                movement.type ===
-                "external_deposit"
-              ) {
-                externalDeposits +=
-                  converted;
-              } else {
-                externalWithdrawals +=
-                  converted;
-              }
+              netExternalFlow +=
+                converted;
             },
           );
 
-        const netExternalFlow =
-          externalDeposits -
-          externalWithdrawals;
-
+        /*
+         * Wealth change generated
+         * inside JIS after removing
+         * net external money.
+         *
+         * Examples of internal growth:
+         * market movement, realized
+         * gains, dividends and cash
+         * yield.
+         */
         const adjustedGrowth =
           missingContributionFx
             ? null
@@ -609,10 +666,6 @@ const PortfolioHistoryChart =
 
           periodChangePercentage,
 
-          externalDeposits,
-
-          externalWithdrawals,
-
           netExternalFlow,
 
           adjustedGrowth,
@@ -633,6 +686,28 @@ const PortfolioHistoryChart =
         range,
         snapshots,
       ]);
+
+    const normalizeZero = (
+      value: number,
+    ) => {
+      return Math.abs(value) <=
+        BALANCE_TOLERANCE
+        ? 0
+        : value;
+    };
+
+    const formatSignedOrZero = (
+      value: number,
+    ) => {
+      const normalized =
+        normalizeZero(value);
+
+      return normalized === 0
+        ? formatCurrency(0)
+        : formatSignedCurrency(
+            normalized,
+          );
+    };
 
     const handlePointerMove = (
       event: PointerEvent<SVGSVGElement>,
@@ -694,25 +769,38 @@ const PortfolioHistoryChart =
           ] ?? null
         : null;
 
+    const normalizedPeriodChange =
+      chartData
+        ? normalizeZero(
+            chartData.periodChange,
+          )
+        : 0;
+
     const changeClassName =
-      chartData &&
-      chartData.periodChange > 0
+      normalizedPeriodChange > 0
         ? "text-emerald-600"
-        : chartData &&
-            chartData.periodChange < 0
+        : normalizedPeriodChange < 0
           ? "text-red-600"
           : "text-slate-900";
 
+    const normalizedAdjustedGrowth =
+      chartData?.adjustedGrowth ===
+        null ||
+      chartData?.adjustedGrowth ===
+        undefined
+        ? null
+        : normalizeZero(
+            chartData.adjustedGrowth,
+          );
+
     const adjustedGrowthClassName =
-      chartData &&
-      chartData.adjustedGrowth !==
+      normalizedAdjustedGrowth !==
         null &&
-      chartData.adjustedGrowth > 0
+      normalizedAdjustedGrowth > 0
         ? "text-emerald-600"
-        : chartData &&
-            chartData.adjustedGrowth !==
+        : normalizedAdjustedGrowth !==
               null &&
-            chartData.adjustedGrowth <
+            normalizedAdjustedGrowth <
               0
           ? "text-red-600"
           : "text-slate-900";
@@ -794,20 +882,25 @@ const PortfolioHistoryChart =
                 <p
                   className={`mt-2 text-lg font-bold ${changeClassName}`}
                 >
-                  {formatSignedCurrency(
+                  {formatSignedOrZero(
                     chartData.periodChange,
                   )}
                 </p>
 
                 <p className="mt-1 text-xs text-slate-400">
-                  {chartData.periodChangePercentage >
-                  0
-                    ? "+"
-                    : ""}
-                  {chartData.periodChangePercentage.toFixed(
-                    2,
-                  )}
-                  %
+                  {Math.abs(
+                    chartData.periodChangePercentage,
+                  ) <=
+                  BALANCE_TOLERANCE
+                    ? "0.00%"
+                    : `${
+                        chartData.periodChangePercentage >
+                        0
+                          ? "+"
+                          : ""
+                      }${chartData.periodChangePercentage.toFixed(
+                        2,
+                      )}%`}
                 </p>
               </article>
 
@@ -819,14 +912,14 @@ const PortfolioHistoryChart =
                 <p className="mt-2 text-lg font-bold text-blue-600">
                   {chartData.missingContributionFx
                     ? "FX pending"
-                    : formatSignedCurrency(
+                    : formatSignedOrZero(
                         chartData.netExternalFlow,
                       )}
                 </p>
 
                 <p className="mt-1 text-xs text-slate-400">
-                  Deposits minus
-                  withdrawals.
+                  Deposits, withdrawals
+                  and their reversals.
                 </p>
               </article>
 
@@ -842,7 +935,7 @@ const PortfolioHistoryChart =
                   {chartData.adjustedGrowth ===
                   null
                     ? "FX pending"
-                    : formatSignedCurrency(
+                    : formatSignedOrZero(
                         chartData.adjustedGrowth,
                       )}
                 </p>
@@ -851,14 +944,19 @@ const PortfolioHistoryChart =
                   {chartData.adjustedGrowthPercentage ===
                   null
                     ? "Waiting for FX"
-                    : `${
-                        chartData.adjustedGrowthPercentage >
-                        0
-                          ? "+"
-                          : ""
-                      }${chartData.adjustedGrowthPercentage.toFixed(
-                        2,
-                      )}%`}
+                    : Math.abs(
+                          chartData.adjustedGrowthPercentage,
+                        ) <=
+                        BALANCE_TOLERANCE
+                      ? "0.00%"
+                      : `${
+                          chartData.adjustedGrowthPercentage >
+                          0
+                            ? "+"
+                            : ""
+                        }${chartData.adjustedGrowthPercentage.toFixed(
+                          2,
+                        )}%`}
                 </p>
               </article>
 
@@ -1206,15 +1304,19 @@ const PortfolioHistoryChart =
               <p className="mt-4 text-xs leading-5 text-slate-400">
                 Growth excluding
                 external money equals
-                the change in Net Worth
-                minus deposits plus
-                external withdrawals
-                during the selected
-                period. ETF purchases,
-                ETF sales and dividends
-                remain inside JIS and
-                are not classified as
-                contributions.
+                Net Worth change minus
+                net external cash flow.
+                ETF purchases, ETF
+                sales and dividends are
+                internal activity.
+                Reversal adjustments
+                are recognized on the
+                date the correction was
+                recorded. This is a
+                contribution-adjusted
+                wealth change, not a
+                formal time-weighted
+                investment return.
               </p>
             </div>
           </>

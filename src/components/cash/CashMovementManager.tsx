@@ -5,6 +5,7 @@ import {
 } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
 import useCashStore, {
+  type CashMovement,
   type CashMovementType,
 } from "../../store/cashStore";
 import useSettingsStore from "../../store/settingsStore";
@@ -15,6 +16,12 @@ const dateFormatter =
     month: "short",
     day: "numeric",
   });
+
+const BALANCE_TOLERANCE =
+  0.00000001;
+
+const REVERSAL_NOTE_PREFIX =
+  "JIS reversal:";
 
 const movementLabels: Record<
   CashMovementType,
@@ -40,6 +47,21 @@ const movementLabels: Record<
 
   adjustment:
     "Adjustment",
+};
+
+const isReversalMovement = (
+  movement: CashMovement,
+) => {
+  return (
+    movement.type ===
+      "adjustment" &&
+    Boolean(movement.relatedId) &&
+    Boolean(
+      movement.note?.startsWith(
+        REVERSAL_NOTE_PREFIX,
+      ),
+    )
+  );
 };
 
 const getTodayInputValue = () => {
@@ -80,6 +102,12 @@ const CashMovementManager = () => {
     useCashStore(
       (state) =>
         state.addExternalWithdrawal,
+    );
+
+  const adjustAccountBalance =
+    useCashStore(
+      (state) =>
+        state.adjustAccountBalance,
     );
 
   const fxBaseCurrency =
@@ -150,6 +178,26 @@ const CashMovementManager = () => {
         account.id === accountId,
     ) ?? null;
 
+  const reversedMovementIds =
+    useMemo(() => {
+      return new Set(
+        movements
+          .filter(
+            isReversalMovement,
+          )
+          .map(
+            (movement) =>
+              movement.relatedId,
+          )
+          .filter(
+            (
+              relatedId,
+            ): relatedId is string =>
+              Boolean(relatedId),
+          ),
+      );
+    }, [movements]);
+
   const convertToReportingCurrency = (
     value: number,
     currency:
@@ -200,6 +248,22 @@ const CashMovementManager = () => {
             return;
           }
 
+          /*
+           * A reversed entry is a
+           * bookkeeping mistake that
+           * was corrected.
+           *
+           * It must not remain inside
+           * contribution totals.
+           */
+          if (
+            reversedMovementIds.has(
+              movement.id,
+            )
+          ) {
+            return;
+          }
+
           const converted =
             convertToReportingCurrency(
               Math.abs(
@@ -240,6 +304,7 @@ const CashMovementManager = () => {
       };
     }, [
       movements,
+      reversedMovementIds,
       fxBaseCurrency,
       fxRates,
       reportingCurrency,
@@ -272,6 +337,14 @@ const CashMovementManager = () => {
     ) {
       setError(
         "Amount must be greater than zero.",
+      );
+
+      return;
+    }
+
+    if (!date) {
+      setError(
+        "Enter a valid date.",
       );
 
       return;
@@ -336,6 +409,161 @@ const CashMovementManager = () => {
     setNote("");
   };
 
+  const handleReverse = (
+    movement: CashMovement,
+  ) => {
+    setError("");
+    setSuccessMessage("");
+
+    if (
+      movement.type !==
+        "external_deposit" &&
+      movement.type !==
+        "external_withdrawal"
+    ) {
+      setError(
+        "Only external deposits and withdrawals can be reversed here.",
+      );
+
+      return;
+    }
+
+    if (
+      reversedMovementIds.has(
+        movement.id,
+      )
+    ) {
+      setError(
+        "This cash movement has already been reversed.",
+      );
+
+      return;
+    }
+
+    const movementName =
+      movement.type ===
+      "external_deposit"
+        ? "deposit"
+        : "withdrawal";
+
+    const confirmed =
+      window.confirm(
+        `Reverse this ${movementName}?\n\n${movement.cashAccountName}\n${formatCurrencyFor(
+          Math.abs(
+            movement.amount,
+          ),
+          movement.currency,
+        )}\n\nThe original entry will remain in the Cash Ledger and JIS will create an opposite reversal movement.`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    /*
+     * Deposit +1500
+     * Reversal -1500
+     *
+     * Withdrawal -500
+     * Reversal +500
+     */
+    const reversalAmount =
+      -movement.amount;
+
+    const result =
+      adjustAccountBalance(
+        movement.cashAccountId,
+        reversalAmount,
+        {
+          type: "adjustment",
+
+          date:
+            new Date().toISOString(),
+
+          relatedId:
+            movement.id,
+
+          symbol:
+            movement.symbol,
+
+          note:
+            `${REVERSAL_NOTE_PREFIX} ${movementName}`,
+        },
+      );
+
+    if (!result.success) {
+      setError(
+        result.error ??
+          "Unable to reverse this cash movement.",
+      );
+
+      return;
+    }
+
+    setSuccessMessage(
+      `${
+        movement.type ===
+        "external_deposit"
+          ? "Deposit"
+          : "Withdrawal"
+      } reversed successfully. The original entry remains in the audit trail.`,
+    );
+  };
+
+  const formatDeposits = () => {
+    if (
+      Math.abs(
+        summary.deposits,
+      ) <= BALANCE_TOLERANCE
+    ) {
+      return formatCurrency(0);
+    }
+
+    return `+${formatCurrency(
+      summary.deposits,
+    )}`;
+  };
+
+  const formatWithdrawals = () => {
+    if (
+      Math.abs(
+        summary.withdrawals,
+      ) <= BALANCE_TOLERANCE
+    ) {
+      return formatCurrency(0);
+    }
+
+    return `-${formatCurrency(
+      summary.withdrawals,
+    )}`;
+  };
+
+  const formatNetContributions =
+    () => {
+      if (
+        Math.abs(
+          summary.netContributions,
+        ) <= BALANCE_TOLERANCE
+      ) {
+        return formatCurrency(0);
+      }
+
+      if (
+        summary.netContributions >
+        0
+      ) {
+        return `+${formatCurrency(
+          summary.netContributions,
+        )}`;
+      }
+
+      return `-${formatCurrency(
+        Math.abs(
+          summary.netContributions,
+        ),
+      )}`;
+    };
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 p-6">
@@ -361,11 +589,15 @@ const CashMovementManager = () => {
             External deposits
           </p>
 
-          <p className="mt-2 text-xl font-bold text-blue-600">
-            +
-            {formatCurrency(
-              summary.deposits,
-            )}
+          <p
+            className={`mt-2 text-xl font-bold ${
+              summary.deposits >
+              BALANCE_TOLERANCE
+                ? "text-blue-600"
+                : "text-slate-900"
+            }`}
+          >
+            {formatDeposits()}
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
@@ -378,11 +610,15 @@ const CashMovementManager = () => {
             External withdrawals
           </p>
 
-          <p className="mt-2 text-xl font-bold text-red-600">
-            -
-            {formatCurrency(
-              summary.withdrawals,
-            )}
+          <p
+            className={`mt-2 text-xl font-bold ${
+              summary.withdrawals >
+              BALANCE_TOLERANCE
+                ? "text-red-600"
+                : "text-slate-900"
+            }`}
+          >
+            {formatWithdrawals()}
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
@@ -395,10 +631,18 @@ const CashMovementManager = () => {
             Net contributions
           </p>
 
-          <p className="mt-2 text-xl font-bold text-slate-900">
-            {formatCurrency(
-              summary.netContributions,
-            )}
+          <p
+            className={`mt-2 text-xl font-bold ${
+              summary.netContributions >
+              BALANCE_TOLERANCE
+                ? "text-blue-600"
+                : summary.netContributions <
+                    -BALANCE_TOLERANCE
+                  ? "text-red-600"
+                  : "text-slate-900"
+            }`}
+          >
+            {formatNetContributions()}
           </p>
 
           <p className="mt-1 text-xs text-slate-400">
@@ -434,6 +678,7 @@ const CashMovementManager = () => {
                 );
 
                 setError("");
+                setSuccessMessage("");
               }}
               className={`rounded-lg px-3 py-2.5 text-sm font-semibold ${
                 movementType ===
@@ -453,6 +698,7 @@ const CashMovementManager = () => {
                 );
 
                 setError("");
+                setSuccessMessage("");
               }}
               className={`rounded-lg px-3 py-2.5 text-sm font-semibold ${
                 movementType ===
@@ -598,6 +844,20 @@ const CashMovementManager = () => {
               ? "Record deposit"
               : "Record withdrawal"}
           </button>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <p className="text-xs font-semibold text-blue-900">
+              Safe corrections
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-blue-700">
+              External deposits and
+              withdrawals can be
+              reversed without deleting
+              the original Cash Ledger
+              entry.
+            </p>
+          </div>
         </form>
 
         <div className="min-w-0">
@@ -618,7 +878,7 @@ const CashMovementManager = () => {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[950px] w-full">
+              <table className="min-w-[1080px] w-full">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
@@ -644,72 +904,141 @@ const CashMovementManager = () => {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                       Note
                     </th>
+
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">
+                      Action
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
                   {movements.map(
-                    (movement) => (
-                      <tr
-                        key={
-                          movement.id
-                        }
-                        className="hover:bg-slate-50"
-                      >
-                        <td className="whitespace-nowrap px-4 py-4 text-sm text-slate-600">
-                          {dateFormatter.format(
-                            new Date(
-                              movement.date,
-                            ),
-                          )}
-                        </td>
+                    (movement) => {
+                      const reversal =
+                        isReversalMovement(
+                          movement,
+                        );
 
-                        <td className="px-4 py-4 text-sm font-semibold text-slate-900">
-                          {
-                            movement.cashAccountName
+                      const reversed =
+                        reversedMovementIds.has(
+                          movement.id,
+                        );
+
+                      const canReverse =
+                        !reversal &&
+                        !reversed &&
+                        (movement.type ===
+                          "external_deposit" ||
+                          movement.type ===
+                            "external_withdrawal");
+
+                      return (
+                        <tr
+                          key={
+                            movement.id
                           }
-                        </td>
-
-                        <td className="px-4 py-4 text-sm text-slate-600">
-                          {
-                            movementLabels[
-                              movement.type
-                            ]
+                          className={
+                            reversed
+                              ? "bg-slate-50/70"
+                              : "hover:bg-slate-50"
                           }
-                        </td>
-
-                        <td className="px-4 py-4 text-sm font-semibold text-slate-700">
-                          {movement.symbol ??
-                            "—"}
-                        </td>
-
-                        <td
-                          className={`whitespace-nowrap px-4 py-4 text-right text-sm font-bold ${
-                            movement.amount >
-                            0
-                              ? "text-emerald-600"
-                              : movement.amount <
-                                  0
-                                ? "text-red-600"
-                                : "text-slate-600"
-                          }`}
                         >
-                          {movement.amount >
-                          0
-                            ? "+"
-                            : ""}
-                          {formatCurrencyFor(
-                            movement.amount,
-                            movement.currency,
-                          )}
-                        </td>
+                          <td className="whitespace-nowrap px-4 py-4 text-sm text-slate-600">
+                            {dateFormatter.format(
+                              new Date(
+                                movement.date,
+                              ),
+                            )}
+                          </td>
 
-                        <td className="max-w-64 px-4 py-4 text-sm text-slate-500">
-                          {movement.note ??
-                            "—"}
-                        </td>
-                      </tr>
-                    ),
+                          <td className="px-4 py-4 text-sm font-semibold text-slate-900">
+                            {
+                              movement.cashAccountName
+                            }
+                          </td>
+
+                          <td className="px-4 py-4 text-sm text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <span>
+                                {reversal
+                                  ? "Reversal"
+                                  : movementLabels[
+                                      movement
+                                        .type
+                                    ]}
+                              </span>
+
+                              {reversed && (
+                                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                  Reversed
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-4 text-sm font-semibold text-slate-700">
+                            {movement.symbol ??
+                              "—"}
+                          </td>
+
+                          <td
+                            className={`whitespace-nowrap px-4 py-4 text-right text-sm font-bold ${
+                              movement.amount >
+                              0
+                                ? "text-emerald-600"
+                                : movement.amount <
+                                    0
+                                  ? "text-red-600"
+                                  : "text-slate-600"
+                            }`}
+                          >
+                            {movement.amount >
+                            0
+                              ? "+"
+                              : ""}
+                            {formatCurrencyFor(
+                              movement.amount,
+                              movement.currency,
+                            )}
+                          </td>
+
+                          <td className="max-w-72 px-4 py-4 text-sm leading-5 text-slate-500">
+                            <div className="whitespace-normal break-words">
+                              {movement.note ??
+                                "—"}
+                            </div>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-4 text-right">
+                            {canReverse ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReverse(
+                                    movement,
+                                  )
+                                }
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                              >
+                                Reverse
+                              </button>
+                            ) : reversed ? (
+                              <span className="text-xs font-medium text-slate-400">
+                                Corrected
+                              </span>
+                            ) : reversal ? (
+                              <span className="text-xs font-medium text-slate-400">
+                                Audit trail
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">
+                                —
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    },
                   )}
                 </tbody>
               </table>
@@ -723,6 +1052,16 @@ const CashMovementManager = () => {
               rates.
             </p>
           )}
+
+          <p className="mt-4 text-xs leading-5 text-slate-400">
+            Reverse is available only
+            for external deposits and
+            external withdrawals.
+            Purchases, sales, dividends
+            and opening balances must be
+            corrected from their
+            original JIS module.
+          </p>
         </div>
       </div>
     </section>

@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import useCurrencyFormatter from "../../hooks/useCurrencyFormatter";
 import useWealthSummary from "../../hooks/useWealthSummary";
-import useCashStore from "../../store/cashStore";
+import useCashStore, {
+  type CashMovement,
+} from "../../store/cashStore";
 import useSettingsStore from "../../store/settingsStore";
 
 const dateFormatter =
@@ -10,6 +12,37 @@ const dateFormatter =
     month: "short",
     day: "numeric",
   });
+
+const BALANCE_TOLERANCE =
+  0.00000001;
+
+const REVERSAL_NOTE_PREFIX =
+  "JIS reversal:";
+
+const isReversalMovement = (
+  movement: CashMovement,
+) => {
+  return (
+    movement.type === "adjustment" &&
+    Boolean(movement.relatedId) &&
+    Boolean(
+      movement.note?.startsWith(
+        REVERSAL_NOTE_PREFIX,
+      ),
+    )
+  );
+};
+
+const isExternalMovement = (
+  movement: CashMovement,
+) => {
+  return (
+    movement.type ===
+      "external_deposit" ||
+    movement.type ===
+      "external_withdrawal"
+  );
+};
 
 const ContributionAnalysis = () => {
   const movements = useCashStore(
@@ -74,6 +107,26 @@ const ContributionAnalysis = () => {
     return value * rate;
   };
 
+  const reversedMovementIds =
+    useMemo(() => {
+      return new Set(
+        movements
+          .filter(
+            isReversalMovement,
+          )
+          .map(
+            (movement) =>
+              movement.relatedId,
+          )
+          .filter(
+            (
+              relatedId,
+            ): relatedId is string =>
+              Boolean(relatedId),
+          ),
+      );
+    }, [movements]);
+
   const analytics =
     useMemo(() => {
       const now =
@@ -95,14 +148,45 @@ const ContributionAnalysis = () => {
           60 *
           1000;
 
+      /*
+       * Original deposits and
+       * withdrawals.
+       */
       const externalMovements =
+        movements.filter(
+          isExternalMovement,
+        );
+
+      /*
+       * Current valid contributions.
+       *
+       * Entries that were reversed are
+       * excluded from the current
+       * contribution totals.
+       */
+      const activeExternalMovements =
+        externalMovements.filter(
+          (movement) =>
+            !reversedMovementIds.has(
+              movement.id,
+            ),
+        );
+
+      /*
+       * Audit history includes original
+       * external movements plus their
+       * reversal adjustments.
+       */
+      const externalHistoryMovements =
         movements
           .filter(
             (movement) =>
-              movement.type ===
-                "external_deposit" ||
-              movement.type ===
-                "external_withdrawal",
+              isExternalMovement(
+                movement,
+              ) ||
+              isReversalMovement(
+                movement,
+              ),
           )
           .sort(
             (
@@ -127,7 +211,10 @@ const ContributionAnalysis = () => {
 
       let missingFx = false;
 
-      externalMovements.forEach(
+      /*
+       * Current contribution totals.
+       */
+      activeExternalMovements.forEach(
         (movement) => {
           const converted =
             convertToReportingCurrency(
@@ -144,17 +231,6 @@ const ContributionAnalysis = () => {
             return;
           }
 
-          const movementTime =
-            new Date(
-              movement.date,
-            ).getTime();
-
-          const signedAmount =
-            movement.type ===
-            "external_deposit"
-              ? converted
-              : -converted;
-
           if (
             movement.type ===
             "external_deposit"
@@ -164,13 +240,58 @@ const ContributionAnalysis = () => {
             withdrawals +=
               converted;
           }
+        },
+      );
+
+      /*
+       * Period analysis uses actual
+       * dated cash flows.
+       *
+       * Example:
+       *
+       * Deposit       +1500
+       * Later reversal -1500
+       *
+       * Period net flow = 0.
+       *
+       * This also works when the
+       * deposit and reversal fall in
+       * different reporting periods.
+       */
+      externalHistoryMovements.forEach(
+        (movement) => {
+          const converted =
+            convertToReportingCurrency(
+              movement.amount,
+              movement.currency,
+            );
+
+          if (
+            converted === null
+          ) {
+            missingFx = true;
+            return;
+          }
+
+          const movementTime =
+            new Date(
+              movement.date,
+            ).getTime();
+
+          if (
+            !Number.isFinite(
+              movementTime,
+            )
+          ) {
+            return;
+          }
 
           if (
             movementTime >=
             thirtyDaysAgo
           ) {
             last30DaysNet +=
-              signedAmount;
+              converted;
           }
 
           if (
@@ -178,11 +299,16 @@ const ContributionAnalysis = () => {
             twelveMonthsAgo
           ) {
             last12MonthsNet +=
-              signedAmount;
+              converted;
           }
         },
       );
 
+      /*
+       * ETF purchases from Cash are
+       * internal transfers, not new
+       * contributions.
+       */
       movements
         .filter(
           (movement) =>
@@ -212,7 +338,7 @@ const ContributionAnalysis = () => {
         );
 
       return {
-        externalMovements,
+        externalHistoryMovements,
 
         deposits,
 
@@ -232,14 +358,66 @@ const ContributionAnalysis = () => {
 
         internalPurchases,
 
+        reversedCount:
+          reversedMovementIds.size,
+
         missingFx,
       };
     }, [
       movements,
+      reversedMovementIds,
       fxBaseCurrency,
       fxRates,
       reportingCurrency,
     ]);
+
+  const normalizeZero = (
+    value: number,
+  ) => {
+    return Math.abs(value) <=
+      BALANCE_TOLERANCE
+      ? 0
+      : value;
+  };
+
+  const formatSignedOrZero = (
+    value: number,
+  ) => {
+    const normalized =
+      normalizeZero(value);
+
+    return normalized === 0
+      ? formatCurrency(0)
+      : formatSignedCurrency(
+          normalized,
+        );
+  };
+
+  const formatPositiveTotal = (
+    value: number,
+  ) => {
+    const normalized =
+      normalizeZero(value);
+
+    return normalized === 0
+      ? formatCurrency(0)
+      : `+${formatCurrency(
+          normalized,
+        )}`;
+  };
+
+  const formatNegativeTotal = (
+    value: number,
+  ) => {
+    const normalized =
+      normalizeZero(value);
+
+    return normalized === 0
+      ? formatCurrency(0)
+      : `-${formatCurrency(
+          normalized,
+        )}`;
+  };
 
   const investmentProfit =
     wealth.totalInvestmentProfit ===
@@ -260,12 +438,15 @@ const ContributionAnalysis = () => {
         ? "text-emerald-600"
         : "text-red-600";
 
+  const normalizedNetContributions =
+    normalizeZero(
+      analytics.netContributions,
+    );
+
   const netContributionClass =
-    analytics.netContributions >
-    0
+    normalizedNetContributions > 0
       ? "text-blue-600"
-      : analytics.netContributions <
-          0
+      : normalizedNetContributions < 0
         ? "text-red-600"
         : "text-slate-900";
 
@@ -294,16 +475,22 @@ const ContributionAnalysis = () => {
             External deposits
           </p>
 
-          <p className="mt-2 text-xl font-bold text-blue-600">
-            +
-            {formatCurrency(
+          <p
+            className={`mt-2 text-xl font-bold ${
+              analytics.deposits >
+              BALANCE_TOLERANCE
+                ? "text-blue-600"
+                : "text-slate-900"
+            }`}
+          >
+            {formatPositiveTotal(
               analytics.deposits,
             )}
           </p>
 
           <p className="mt-1 text-xs leading-5 text-slate-400">
-            Money transferred from
-            outside JIS.
+            Valid money transferred
+            from outside JIS.
           </p>
         </article>
 
@@ -312,15 +499,22 @@ const ContributionAnalysis = () => {
             External withdrawals
           </p>
 
-          <p className="mt-2 text-xl font-bold text-red-600">
-            -
-            {formatCurrency(
+          <p
+            className={`mt-2 text-xl font-bold ${
+              analytics.withdrawals >
+              BALANCE_TOLERANCE
+                ? "text-red-600"
+                : "text-slate-900"
+            }`}
+          >
+            {formatNegativeTotal(
               analytics.withdrawals,
             )}
           </p>
 
           <p className="mt-1 text-xs leading-5 text-slate-400">
-            Money removed from JIS.
+            Valid money removed from
+            JIS.
           </p>
         </article>
 
@@ -332,7 +526,7 @@ const ContributionAnalysis = () => {
           <p
             className={`mt-2 text-xl font-bold ${netContributionClass}`}
           >
-            {formatSignedCurrency(
+            {formatSignedOrZero(
               analytics.netContributions,
             )}
           </p>
@@ -369,15 +563,15 @@ const ContributionAnalysis = () => {
             </h3>
 
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Only deposits from
-              outside JIS and
-              withdrawals leaving JIS
-              appear here.
+              Deposits, withdrawals and
+              their corrections remain
+              visible for a complete
+              audit trail.
             </p>
           </div>
 
           {analytics
-            .externalMovements
+            .externalHistoryMovements
             .length === 0 ? (
             <div className="flex min-h-56 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
               <div>
@@ -387,7 +581,7 @@ const ContributionAnalysis = () => {
                 </h4>
 
                 <p className="mt-2 text-sm text-slate-500">
-                  Your next deposit
+                  Your next transfer
                   from your bank to
                   Tyba Cash will appear
                   here.
@@ -396,7 +590,7 @@ const ContributionAnalysis = () => {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[760px] w-full">
+              <table className="min-w-[820px] w-full">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -422,22 +616,40 @@ const ContributionAnalysis = () => {
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
-                  {analytics.externalMovements
+                  {analytics.externalHistoryMovements
                     .slice(0, 30)
                     .map(
                       (
                         movement,
                       ) => {
+                        const reversal =
+                          isReversalMovement(
+                            movement,
+                          );
+
+                        const reversed =
+                          reversedMovementIds.has(
+                            movement.id,
+                          );
+
                         const isDeposit =
                           movement.type ===
                           "external_deposit";
+
+                        const amountPositive =
+                          movement.amount >
+                          0;
 
                         return (
                           <tr
                             key={
                               movement.id
                             }
-                            className="hover:bg-slate-50"
+                            className={
+                              reversed
+                                ? "bg-slate-50/70"
+                                : "hover:bg-slate-50"
+                            }
                           >
                             <td className="whitespace-nowrap px-4 py-4 text-sm text-slate-600">
                               {dateFormatter.format(
@@ -454,40 +666,52 @@ const ContributionAnalysis = () => {
                             </td>
 
                             <td className="px-4 py-4">
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                  isDeposit
-                                    ? "bg-blue-50 text-blue-700"
-                                    : "bg-red-50 text-red-700"
-                                }`}
-                              >
-                                {isDeposit
-                                  ? "Deposit"
-                                  : "Withdrawal"}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    reversal
+                                      ? "bg-slate-100 text-slate-700"
+                                      : isDeposit
+                                        ? "bg-blue-50 text-blue-700"
+                                        : "bg-red-50 text-red-700"
+                                  }`}
+                                >
+                                  {reversal
+                                    ? "Reversal"
+                                    : isDeposit
+                                      ? "Deposit"
+                                      : "Withdrawal"}
+                                </span>
+
+                                {reversed && (
+                                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                    Reversed
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
                             <td
                               className={`whitespace-nowrap px-4 py-4 text-right text-sm font-bold ${
-                                isDeposit
-                                  ? "text-blue-600"
+                                amountPositive
+                                  ? "text-emerald-600"
                                   : "text-red-600"
                               }`}
                             >
-                              {isDeposit
+                              {amountPositive
                                 ? "+"
-                                : "-"}
+                                : ""}
                               {formatCurrencyFor(
-                                Math.abs(
-                                  movement.amount,
-                                ),
+                                movement.amount,
                                 movement.currency,
                               )}
                             </td>
 
-                            <td className="max-w-64 px-4 py-4 text-sm text-slate-500">
-                              {movement.note ??
-                                "—"}
+                            <td className="max-w-72 px-4 py-4 text-sm leading-5 text-slate-500">
+                              <div className="whitespace-normal break-words">
+                                {movement.note ??
+                                  "—"}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -506,15 +730,16 @@ const ContributionAnalysis = () => {
             </p>
 
             <p className="mt-2 text-xl font-bold text-slate-900">
-              {formatSignedCurrency(
+              {formatSignedOrZero(
                 analytics.last30DaysNet,
               )}
             </p>
 
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Net external capital
-              added during the last
-              30 days.
+              after deposits,
+              withdrawals and
+              corrections.
             </p>
           </article>
 
@@ -524,14 +749,14 @@ const ContributionAnalysis = () => {
             </p>
 
             <p className="mt-2 text-xl font-bold text-slate-900">
-              {formatSignedCurrency(
+              {formatSignedOrZero(
                 analytics.last12MonthsNet,
               )}
             </p>
 
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Average{" "}
-              {formatCurrency(
+              {formatSignedOrZero(
                 analytics.averageMonthly12Months,
               )}{" "}
               per month.
@@ -559,6 +784,28 @@ const ContributionAnalysis = () => {
               Not counted as new money.
             </p>
           </article>
+
+          {analytics.reversedCount >
+            0 && (
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-xs font-medium text-slate-500">
+                Corrected entries
+              </p>
+
+              <p className="mt-2 text-xl font-bold text-slate-900">
+                {
+                  analytics.reversedCount
+                }
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Reversed deposits or
+                withdrawals excluded
+                from current
+                contribution totals.
+              </p>
+            </article>
+          )}
 
           <article className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
             <p className="text-sm font-semibold text-blue-900">
@@ -610,14 +857,12 @@ const ContributionAnalysis = () => {
 
       <div className="border-t border-slate-100 px-5 py-4">
         <p className="text-xs leading-5 text-slate-400">
-          Historical balances that
-          existed before the Cash
-          Ledger was introduced are
-          classified as Opening
-          Balance, not as external
-          contributions. From now on,
-          deposits and withdrawals are
-          tracked explicitly.
+          A reversal never deletes the
+          original movement. JIS keeps
+          both records for audit
+          purposes while excluding the
+          corrected entry from current
+          contribution totals.
         </p>
       </div>
     </section>
