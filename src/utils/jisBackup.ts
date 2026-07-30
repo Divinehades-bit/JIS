@@ -3,7 +3,8 @@ export type JisBackupVersion =
   | 2
   | 3
   | 4
-  | 5;
+  | 5
+  | 6;
 
 type JisBackupV1Data = {
   portfolio: unknown;
@@ -34,6 +35,11 @@ type JisBackupV5Data =
   JisBackupV4Data & {
     marketOpportunities: unknown;
     tradingLab: unknown;
+  };
+
+type JisBackupV6Data =
+  JisBackupV5Data & {
+    watchlistTrends: unknown;
   };
 
 type JisBackupV1 = {
@@ -71,12 +77,20 @@ type JisBackupV5 = {
   data: JisBackupV5Data;
 };
 
+type JisBackupV6 = {
+  app: "JIS";
+  version: 6;
+  exportedAt: string;
+  data: JisBackupV6Data;
+};
+
 export type JisBackup =
   | JisBackupV1
   | JisBackupV2
   | JisBackupV3
   | JisBackupV4
-  | JisBackupV5;
+  | JisBackupV5
+  | JisBackupV6;
 
 const STORAGE_KEYS = {
   portfolio: "portfolio",
@@ -113,6 +127,9 @@ const STORAGE_KEYS = {
 
   tradingLab:
     "jis-trading-lab",
+
+  watchlistTrends:
+    "jis-watchlist-trends",
 
   priceCooldown:
     "jis-market-price-cooldown-until",
@@ -161,7 +178,9 @@ const writeStorageValue = (
       value === null ||
       value === undefined
     ) {
-      localStorage.removeItem(key);
+      localStorage.removeItem(
+        key,
+      );
 
       return;
     }
@@ -186,7 +205,9 @@ const clearKeys = (
   keys: string[],
 ): void => {
   keys.forEach((key) => {
-    localStorage.removeItem(key);
+    localStorage.removeItem(
+      key,
+    );
   });
 };
 
@@ -201,6 +222,7 @@ const clearDataAfterV1 =
       STORAGE_KEYS.dividends,
       STORAGE_KEYS.marketOpportunities,
       STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.watchlistTrends,
     ]);
   };
 
@@ -211,6 +233,7 @@ const clearDataAfterV2 =
       STORAGE_KEYS.dividends,
       STORAGE_KEYS.marketOpportunities,
       STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.watchlistTrends,
     ]);
   };
 
@@ -220,6 +243,7 @@ const clearDataAfterV3 =
       STORAGE_KEYS.cashMovements,
       STORAGE_KEYS.marketOpportunities,
       STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.watchlistTrends,
     ]);
   };
 
@@ -228,6 +252,14 @@ const clearDataAfterV4 =
     clearKeys([
       STORAGE_KEYS.marketOpportunities,
       STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.watchlistTrends,
+    ]);
+  };
+
+const clearDataAfterV5 =
+  (): void => {
+    clearKeys([
+      STORAGE_KEYS.watchlistTrends,
     ]);
   };
 
@@ -247,7 +279,8 @@ const sanitizeFilename = (
         "",
       );
 
-  return sanitized || "portfolio";
+  return sanitized ||
+    "portfolio";
 };
 
 const getDateString =
@@ -272,11 +305,11 @@ const getDateString =
   };
 
 export const createBackup =
-  (): JisBackupV5 => {
+  (): JisBackupV6 => {
     return {
       app: "JIS",
 
-      version: 5,
+      version: 6,
 
       exportedAt:
         new Date().toISOString(),
@@ -341,6 +374,11 @@ export const createBackup =
           readStorageValue(
             STORAGE_KEYS.tradingLab,
           ),
+
+        watchlistTrends:
+          readStorageValue(
+            STORAGE_KEYS.watchlistTrends,
+          ),
       },
     };
   };
@@ -391,7 +429,9 @@ export const exportJisBackup = (
 
   anchor.remove();
 
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(
+    url,
+  );
 };
 
 const validateBackup = (
@@ -414,7 +454,8 @@ const validateBackup = (
     value.version !== 2 &&
     value.version !== 3 &&
     value.version !== 4 &&
-    value.version !== 5
+    value.version !== 5 &&
+    value.version !== 6
   ) {
     throw new Error(
       "Unsupported JIS backup version.",
@@ -527,6 +568,17 @@ const restoreV5Data = (
   );
 };
 
+const restoreV6Data = (
+  data: JisBackupV6Data,
+): void => {
+  restoreV5Data(data);
+
+  writeStorageValue(
+    STORAGE_KEYS.watchlistTrends,
+    data.watchlistTrends,
+  );
+};
+
 export const importJisBackup =
   async (
     file: File,
@@ -609,7 +661,19 @@ export const importJisBackup =
       return backup;
     }
 
-    restoreV5Data(
+    if (
+      backup.version === 5
+    ) {
+      clearDataAfterV5();
+
+      restoreV5Data(
+        backup.data,
+      );
+
+      return backup;
+    }
+
+    restoreV6Data(
       backup.data,
     );
 
@@ -645,6 +709,7 @@ export const resetJisData =
       STORAGE_KEYS.dividends,
       STORAGE_KEYS.marketOpportunities,
       STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.watchlistTrends,
       STORAGE_KEYS.priceCooldown,
     ]);
   };

@@ -22,6 +22,10 @@ import {
 } from "./api/paper-tracking.js";
 
 import {
+  GET as getWatchlistTrends,
+} from "./api/watchlist-trends.js";
+
+import {
   getLatestMarketPrices,
   MarketDataError,
 } from "./server/marketPrices.js";
@@ -100,6 +104,7 @@ const registerServerlessGet = (
 ): void => {
   server.middlewares.use(
     path,
+
     async (
       request,
       response,
@@ -176,6 +181,7 @@ const createLocalMarketDataPlugin = (
   ): void => {
     server.middlewares.use(
       "/api/market-prices",
+
       async (
         request,
         response,
@@ -213,6 +219,7 @@ const createLocalMarketDataPlugin = (
               symbolsParameter.split(
                 ",",
               ),
+
               apiKey,
             );
 
@@ -264,13 +271,21 @@ const createLocalMarketDataPlugin = (
       "/api/paper-tracking",
       getPaperTracking,
     );
+
+    registerServerlessGet(
+      server,
+      "/api/watchlist-trends",
+      getWatchlistTrends,
+    );
   };
 
   return {
     name:
       "jis-local-market-data",
 
-    configureServer(server) {
+    configureServer(
+      server,
+    ) {
       registerMiddleware(
         server,
       );

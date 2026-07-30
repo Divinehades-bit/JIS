@@ -53,7 +53,7 @@ const DataManagement = () => {
       );
 
       setMessage(
-        "Backup version 5 exported successfully.",
+        "Backup version 6 exported successfully.",
       );
     } catch (exportError) {
       console.error(
@@ -88,7 +88,7 @@ const DataManagement = () => {
 
     const confirmed =
       window.confirm(
-        "Importing this backup will replace your current JIS portfolio, transactions, cash, cash movements, goals, settings, history, dividends, Market Radar, watchlist and Paper Tracking data.\n\nContinue?",
+        "Importing this backup will replace your current JIS portfolio, transactions, cash, cash movements, goals, settings, history, dividends, Market Radar, Watchlist, Watchlist Trends and Paper Tracking data.\n\nContinue?",
       );
 
     if (!confirmed) {
@@ -133,7 +133,7 @@ const DataManagement = () => {
 
     const firstConfirmation =
       window.confirm(
-        "Reset all JIS data?\n\nThis will remove your investments, transactions, cash accounts, cash movements, dividends, goals, settings, historical data, Market Radar results, watchlist and Paper Tracking.",
+        "Reset all JIS data?\n\nThis will remove your investments, transactions, cash accounts, cash movements, dividends, goals, settings, historical data, Market Radar results, Watchlist, Watchlist Trends and Paper Tracking.",
       );
 
     if (!firstConfirmation) {
@@ -183,34 +183,33 @@ const DataManagement = () => {
 
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
           Export a complete copy of
-          your JIS financial and
-          Trading Lab data or restore
-          a previous backup.
+          your JIS financial, Market
+          Radar and Trading Lab data or
+          restore a previous backup.
         </p>
       </div>
 
       <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white font-bold text-blue-600 shadow-sm">
-            5
+            6
           </div>
 
           <div>
             <p className="font-semibold text-blue-900">
-              Backup version 5
+              Backup version 6
             </p>
 
             <p className="mt-1 text-sm leading-6 text-blue-700">
               Includes portfolio,
               transactions, goals,
               settings, multicurrency
-              cash, FX rates, historical
-              net worth, dividends,
-              withholding taxes, the
-              complete Cash Ledger,
-              Market Radar results,
-              watchlist and Paper
-              Tracking history.
+              cash, FX rates, net worth
+              history, dividends,
+              withholding taxes, Cash
+              Ledger, Market Radar,
+              Watchlist, Watchlist
+              Trends and Paper Tracking.
             </p>
           </div>
         </div>
@@ -228,8 +227,8 @@ const DataManagement = () => {
 
           <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
             Download your complete JIS
-            financial and Trading Lab
-            data as a JSON backup file.
+            financial, Radar, trend and
+            Trading Lab data as JSON.
           </p>
 
           <button
@@ -252,7 +251,7 @@ const DataManagement = () => {
 
           <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
             Restore JIS from a version
-            1, 2, 3, 4 or 5 backup.
+            1, 2, 3, 4, 5 or 6 backup.
           </p>
 
           <button
@@ -290,8 +289,8 @@ const DataManagement = () => {
 
           <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">
             Delete all locally stored
-            JIS financial, Market Radar
-            and Trading Lab data.
+            financial, Radar, trend and
+            Trading Lab information.
           </p>
 
           <button
@@ -304,18 +303,17 @@ const DataManagement = () => {
         </article>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
           <h3 className="text-sm font-semibold text-slate-900">
             Cash Ledger included
           </h3>
 
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Backup v5 preserves
-            deposits, withdrawals,
-            purchases, sales,
-            dividends, opening balances,
-            reversals and manual cash
+            Preserves deposits,
+            withdrawals, purchases,
+            sales, dividends, opening
+            balances, reversals and
             adjustments.
           </p>
         </article>
@@ -326,11 +324,23 @@ const DataManagement = () => {
           </h3>
 
           <p className="mt-2 text-sm leading-6 text-violet-700">
-            Watchlist items, active
-            simulations, closed paper
+            Preserves Watchlist items,
+            active simulations, closed
             trades and their 5, 10 and
-            20-session results are
-            preserved.
+            20-session results.
+          </p>
+        </article>
+
+        <article className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+          <h3 className="text-sm font-semibold text-blue-900">
+            Watchlist Trends included
+          </h3>
+
+          <p className="mt-2 text-sm leading-6 text-blue-700">
+            Preserves one-year price
+            histories, moving averages,
+            trend classifications and
+            Base 100 comparison data.
           </p>
         </article>
       </div>
