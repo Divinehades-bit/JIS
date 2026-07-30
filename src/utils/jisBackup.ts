@@ -2,7 +2,8 @@ export type JisBackupVersion =
   | 1
   | 2
   | 3
-  | 4;
+  | 4
+  | 5;
 
 type JisBackupV1Data = {
   portfolio: unknown;
@@ -27,6 +28,12 @@ type JisBackupV3Data =
 type JisBackupV4Data =
   JisBackupV3Data & {
     cashMovements: unknown;
+  };
+
+type JisBackupV5Data =
+  JisBackupV4Data & {
+    marketOpportunities: unknown;
+    tradingLab: unknown;
   };
 
 type JisBackupV1 = {
@@ -57,11 +64,19 @@ type JisBackupV4 = {
   data: JisBackupV4Data;
 };
 
+type JisBackupV5 = {
+  app: "JIS";
+  version: 5;
+  exportedAt: string;
+  data: JisBackupV5Data;
+};
+
 export type JisBackup =
   | JisBackupV1
   | JisBackupV2
   | JisBackupV3
-  | JisBackupV4;
+  | JisBackupV4
+  | JisBackupV5;
 
 const STORAGE_KEYS = {
   portfolio: "portfolio",
@@ -93,16 +108,19 @@ const STORAGE_KEYS = {
   dividends:
     "jis-dividends",
 
+  marketOpportunities:
+    "jis-market-opportunities",
+
+  tradingLab:
+    "jis-trading-lab",
+
   priceCooldown:
     "jis-market-price-cooldown-until",
 } as const;
 
 const isRecord = (
   value: unknown,
-): value is Record<
-  string,
-  unknown
-> => {
+): value is Record<string, unknown> => {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -137,15 +155,13 @@ const readStorageValue = (
 const writeStorageValue = (
   key: string,
   value: unknown,
-) => {
+): void => {
   try {
     if (
       value === null ||
       value === undefined
     ) {
-      localStorage.removeItem(
-        key,
-      );
+      localStorage.removeItem(key);
 
       return;
     }
@@ -166,72 +182,101 @@ const writeStorageValue = (
   }
 };
 
-const clearPostV1Data = () => {
-  localStorage.removeItem(
-    STORAGE_KEYS.cashAccounts,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.cashFxRates,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.cashMovements,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.portfolioHistory,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.wealthHistory,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.dividends,
-  );
+const clearKeys = (
+  keys: string[],
+): void => {
+  keys.forEach((key) => {
+    localStorage.removeItem(key);
+  });
 };
+
+const clearDataAfterV1 =
+  (): void => {
+    clearKeys([
+      STORAGE_KEYS.cashAccounts,
+      STORAGE_KEYS.cashFxRates,
+      STORAGE_KEYS.cashMovements,
+      STORAGE_KEYS.portfolioHistory,
+      STORAGE_KEYS.wealthHistory,
+      STORAGE_KEYS.dividends,
+      STORAGE_KEYS.marketOpportunities,
+      STORAGE_KEYS.tradingLab,
+    ]);
+  };
+
+const clearDataAfterV2 =
+  (): void => {
+    clearKeys([
+      STORAGE_KEYS.cashMovements,
+      STORAGE_KEYS.dividends,
+      STORAGE_KEYS.marketOpportunities,
+      STORAGE_KEYS.tradingLab,
+    ]);
+  };
+
+const clearDataAfterV3 =
+  (): void => {
+    clearKeys([
+      STORAGE_KEYS.cashMovements,
+      STORAGE_KEYS.marketOpportunities,
+      STORAGE_KEYS.tradingLab,
+    ]);
+  };
+
+const clearDataAfterV4 =
+  (): void => {
+    clearKeys([
+      STORAGE_KEYS.marketOpportunities,
+      STORAGE_KEYS.tradingLab,
+    ]);
+  };
 
 const sanitizeFilename = (
   value: string,
-) => {
-  const sanitized = value
-    .trim()
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9]+/g,
-      "-",
-    )
-    .replace(/^-+|-+$/g, "");
+): string => {
+  const sanitized =
+    value
+      .trim()
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9]+/g,
+        "-",
+      )
+      .replace(
+        /^-+|-+$/g,
+        "",
+      );
 
-  return (
-    sanitized || "portfolio"
-  );
+  return sanitized || "portfolio";
 };
 
-const getDateString = () => {
-  const now = new Date();
+const getDateString =
+  (): string => {
+    const now =
+      new Date();
 
-  const year =
-    now.getFullYear();
+    const year =
+      now.getFullYear();
 
-  const month = String(
-    now.getMonth() + 1,
-  ).padStart(2, "0");
+    const month =
+      String(
+        now.getMonth() + 1,
+      ).padStart(2, "0");
 
-  const day = String(
-    now.getDate(),
-  ).padStart(2, "0");
+    const day =
+      String(
+        now.getDate(),
+      ).padStart(2, "0");
 
-  return `${year}-${month}-${day}`;
-};
+    return `${year}-${month}-${day}`;
+  };
 
 export const createBackup =
-  (): JisBackupV4 => {
+  (): JisBackupV5 => {
     return {
       app: "JIS",
 
-      version: 4,
+      version: 5,
 
       exportedAt:
         new Date().toISOString(),
@@ -286,34 +331,50 @@ export const createBackup =
           readStorageValue(
             STORAGE_KEYS.dividends,
           ),
+
+        marketOpportunities:
+          readStorageValue(
+            STORAGE_KEYS.marketOpportunities,
+          ),
+
+        tradingLab:
+          readStorageValue(
+            STORAGE_KEYS.tradingLab,
+          ),
       },
     };
   };
 
 export const exportJisBackup = (
   portfolioName: string,
-) => {
+): void => {
   const backup =
     createBackup();
 
-  const blob = new Blob(
-    [
-      JSON.stringify(
-        backup,
-        null,
-        2,
-      ),
-    ],
-    {
-      type: "application/json",
-    },
-  );
+  const blob =
+    new Blob(
+      [
+        JSON.stringify(
+          backup,
+          null,
+          2,
+        ),
+      ],
+      {
+        type:
+          "application/json",
+      },
+    );
 
   const url =
-    URL.createObjectURL(blob);
+    URL.createObjectURL(
+      blob,
+    );
 
   const anchor =
-    document.createElement("a");
+    document.createElement(
+      "a",
+    );
 
   anchor.href = url;
 
@@ -352,7 +413,8 @@ const validateBackup = (
     value.version !== 1 &&
     value.version !== 2 &&
     value.version !== 3 &&
-    value.version !== 4
+    value.version !== 4 &&
+    value.version !== 5
   ) {
     throw new Error(
       "Unsupported JIS backup version.",
@@ -379,7 +441,7 @@ const validateBackup = (
 
 const restoreBaseData = (
   data: JisBackupV1Data,
-) => {
+): void => {
   writeStorageValue(
     STORAGE_KEYS.portfolio,
     data.portfolio,
@@ -403,7 +465,7 @@ const restoreBaseData = (
 
 const restoreV2Data = (
   data: JisBackupV2Data,
-) => {
+): void => {
   restoreBaseData(data);
 
   writeStorageValue(
@@ -429,12 +491,39 @@ const restoreV2Data = (
 
 const restoreV3Data = (
   data: JisBackupV3Data,
-) => {
+): void => {
   restoreV2Data(data);
 
   writeStorageValue(
     STORAGE_KEYS.dividends,
     data.dividends,
+  );
+};
+
+const restoreV4Data = (
+  data: JisBackupV4Data,
+): void => {
+  restoreV3Data(data);
+
+  writeStorageValue(
+    STORAGE_KEYS.cashMovements,
+    data.cashMovements,
+  );
+};
+
+const restoreV5Data = (
+  data: JisBackupV5Data,
+): void => {
+  restoreV4Data(data);
+
+  writeStorageValue(
+    STORAGE_KEYS.marketOpportunities,
+    data.marketOpportunities,
+  );
+
+  writeStorageValue(
+    STORAGE_KEYS.tradingLab,
+    data.tradingLab,
   );
 };
 
@@ -449,7 +538,9 @@ export const importJisBackup =
         await file.text();
 
       parsedValue =
-        JSON.parse(fileContent);
+        JSON.parse(
+          fileContent,
+        );
     } catch {
       throw new Error(
         "Unable to read this JSON backup.",
@@ -457,12 +548,14 @@ export const importJisBackup =
     }
 
     const backup =
-      validateBackup(parsedValue);
+      validateBackup(
+        parsedValue,
+      );
 
     /*
-     * Market refresh cooldown is
-     * temporary state and must never
-     * be restored from a backup.
+     * Never preserve temporary
+     * price-refresh cooldown state
+     * when importing a backup.
      */
     localStorage.removeItem(
       STORAGE_KEYS.priceCooldown,
@@ -471,12 +564,7 @@ export const importJisBackup =
     if (
       backup.version === 1
     ) {
-      /*
-       * Version 1 predates cash,
-       * historical wealth, dividends
-       * and the Cash Ledger.
-       */
-      clearPostV1Data();
+      clearDataAfterV1();
 
       restoreBaseData(
         backup.data,
@@ -488,23 +576,7 @@ export const importJisBackup =
     if (
       backup.version === 2
     ) {
-      /*
-       * Version 2 includes cash but
-       * predates dividends and the
-       * Cash Ledger.
-       *
-       * Removing the ledger allows JIS
-       * to reconstruct compatible
-       * historical movements after the
-       * application reloads.
-       */
-      localStorage.removeItem(
-        STORAGE_KEYS.dividends,
-      );
-
-      localStorage.removeItem(
-        STORAGE_KEYS.cashMovements,
-      );
+      clearDataAfterV2();
 
       restoreV2Data(
         backup.data,
@@ -516,17 +588,7 @@ export const importJisBackup =
     if (
       backup.version === 3
     ) {
-      /*
-       * Version 3 includes dividends
-       * but predates the Cash Ledger.
-       *
-       * JIS will reconstruct known
-       * purchase, sale and dividend
-       * cash movements after reload.
-       */
-      localStorage.removeItem(
-        STORAGE_KEYS.cashMovements,
-      );
+      clearDataAfterV3();
 
       restoreV3Data(
         backup.data,
@@ -535,74 +597,54 @@ export const importJisBackup =
       return backup;
     }
 
-    /*
-     * Version 4 restores the complete
-     * Cash Ledger exactly as exported.
-     */
-    restoreV3Data(
-      backup.data,
-    );
+    if (
+      backup.version === 4
+    ) {
+      clearDataAfterV4();
 
-    writeStorageValue(
-      STORAGE_KEYS.cashMovements,
-      backup.data.cashMovements,
+      restoreV4Data(
+        backup.data,
+      );
+
+      return backup;
+    }
+
+    restoreV5Data(
+      backup.data,
     );
 
     return backup;
   };
 
-export const resetJisData = () => {
-  /*
-   * Keep portfolio and transaction
-   * keys as empty arrays.
-   *
-   * Removing them completely would
-   * cause the original demo portfolio
-   * to be recreated.
-   */
-  writeStorageValue(
-    STORAGE_KEYS.portfolio,
-    [],
-  );
+export const resetJisData =
+  (): void => {
+    /*
+     * Keep these two keys as empty
+     * arrays. Removing portfolio
+     * completely could recreate the
+     * original demonstration data.
+     */
+    writeStorageValue(
+      STORAGE_KEYS.portfolio,
+      [],
+    );
 
-  writeStorageValue(
-    STORAGE_KEYS.transactions,
-    [],
-  );
+    writeStorageValue(
+      STORAGE_KEYS.transactions,
+      [],
+    );
 
-  localStorage.removeItem(
-    STORAGE_KEYS.goal,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.settings,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.cashAccounts,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.cashFxRates,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.cashMovements,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.portfolioHistory,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.wealthHistory,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.dividends,
-  );
-
-  localStorage.removeItem(
-    STORAGE_KEYS.priceCooldown,
-  );
-};
+    clearKeys([
+      STORAGE_KEYS.goal,
+      STORAGE_KEYS.settings,
+      STORAGE_KEYS.cashAccounts,
+      STORAGE_KEYS.cashFxRates,
+      STORAGE_KEYS.cashMovements,
+      STORAGE_KEYS.portfolioHistory,
+      STORAGE_KEYS.wealthHistory,
+      STORAGE_KEYS.dividends,
+      STORAGE_KEYS.marketOpportunities,
+      STORAGE_KEYS.tradingLab,
+      STORAGE_KEYS.priceCooldown,
+    ]);
+  };

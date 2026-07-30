@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+
 import {
   defineConfig,
   loadEnv,
@@ -7,9 +8,18 @@ import {
   type PreviewServer,
   type ViteDevServer,
 } from "vite";
-import { VitePWA } from "vite-plugin-pwa";
 
-import { GET as getMarketOpportunities } from "./api/market-opportunities.js";
+import {
+  VitePWA,
+} from "vite-plugin-pwa";
+
+import {
+  GET as getMarketOpportunities,
+} from "./api/market-opportunities.js";
+
+import {
+  GET as getPaperTracking,
+} from "./api/paper-tracking.js";
 
 import {
   getLatestMarketPrices,
@@ -18,19 +28,28 @@ import {
 
 type LocalResponse = {
   statusCode: number;
+
   setHeader: (
     name: string,
     value: string,
   ) => void;
-  end: (body?: string) => void;
+
+  end: (
+    body?: string,
+  ) => void;
 };
+
+type ServerlessGetHandler = (
+  request: Request,
+) => Promise<Response>;
 
 const sendJson = (
   response: LocalResponse,
   statusCode: number,
   body: unknown,
-) => {
-  response.statusCode = statusCode;
+): void => {
+  response.statusCode =
+    statusCode;
 
   response.setHeader(
     "Content-Type",
@@ -42,13 +61,15 @@ const sendJson = (
     "no-store",
   );
 
-  response.end(JSON.stringify(body));
+  response.end(
+    JSON.stringify(body),
+  );
 };
 
 const sendWebResponse = async (
   response: LocalResponse,
   webResponse: Response,
-) => {
+): Promise<void> => {
   response.statusCode =
     webResponse.status;
 
@@ -67,6 +88,84 @@ const sendWebResponse = async (
   response.end(body);
 };
 
+const registerServerlessGet = (
+  server:
+    | ViteDevServer
+    | PreviewServer,
+
+  path: string,
+
+  handler:
+    ServerlessGetHandler,
+): void => {
+  server.middlewares.use(
+    path,
+    async (
+      request,
+      response,
+    ) => {
+      if (
+        request.method !==
+        "GET"
+      ) {
+        sendJson(
+          response,
+          405,
+          {
+            message:
+              "Method not allowed.",
+          },
+        );
+
+        return;
+      }
+
+      try {
+        const requestUrl =
+          new URL(
+            request.url ?? "/",
+            "http://localhost",
+          );
+
+        const apiRequest =
+          new Request(
+            requestUrl.toString(),
+            {
+              method: "GET",
+
+              headers: {
+                Accept:
+                  "application/json",
+              },
+            },
+          );
+
+        const apiResponse =
+          await handler(
+            apiRequest,
+          );
+
+        await sendWebResponse(
+          response,
+          apiResponse,
+        );
+      } catch (error) {
+        sendJson(
+          response,
+          500,
+          {
+            message:
+              error instanceof
+                Error
+                ? error.message
+                : "Unable to run the local API.",
+          },
+        );
+      }
+    },
+  );
+};
+
 const createLocalMarketDataPlugin = (
   apiKey: string,
 ): Plugin => {
@@ -74,7 +173,7 @@ const createLocalMarketDataPlugin = (
     server:
       | ViteDevServer
       | PreviewServer,
-  ) => {
+  ): void => {
     server.middlewares.use(
       "/api/market-prices",
       async (
@@ -82,12 +181,17 @@ const createLocalMarketDataPlugin = (
         response,
       ) => {
         if (
-          request.method !== "GET"
+          request.method !==
+          "GET"
         ) {
-          sendJson(response, 405, {
-            message:
-              "Method not allowed.",
-          });
+          sendJson(
+            response,
+            405,
+            {
+              message:
+                "Method not allowed.",
+            },
+          );
 
           return;
         }
@@ -134,94 +238,50 @@ const createLocalMarketDataPlugin = (
             return;
           }
 
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Unable to retrieve market prices.";
-
-          sendJson(
-            response,
-            500,
-            {
-              message,
-            },
-          );
-        }
-      },
-    );
-
-    server.middlewares.use(
-      "/api/market-opportunities",
-      async (
-        request,
-        response,
-      ) => {
-        if (
-          request.method !== "GET"
-        ) {
-          sendJson(response, 405, {
-            message:
-              "Method not allowed.",
-          });
-
-          return;
-        }
-
-        try {
-          const requestUrl =
-            new URL(
-              request.url ?? "/",
-              "http://localhost",
-            );
-
-          const apiRequest =
-            new Request(
-              requestUrl.toString(),
-              {
-                method: "GET",
-                headers: {
-                  Accept:
-                    "application/json",
-                },
-              },
-            );
-
-          const apiResponse =
-            await getMarketOpportunities(
-              apiRequest,
-            );
-
-          await sendWebResponse(
-            response,
-            apiResponse,
-          );
-        } catch (error) {
           sendJson(
             response,
             500,
             {
               message:
-                error instanceof Error
+                error instanceof
+                  Error
                   ? error.message
-                  : "Unable to run the local market scanner.",
+                  : "Unable to retrieve market prices.",
             },
           );
         }
       },
     );
+
+    registerServerlessGet(
+      server,
+      "/api/market-opportunities",
+      getMarketOpportunities,
+    );
+
+    registerServerlessGet(
+      server,
+      "/api/paper-tracking",
+      getPaperTracking,
+    );
   };
 
   return {
-    name: "jis-local-market-data",
+    name:
+      "jis-local-market-data",
 
     configureServer(server) {
-      registerMiddleware(server);
+      registerMiddleware(
+        server,
+      );
     },
 
     configurePreviewServer(
       server,
     ) {
-      registerMiddleware(server);
+      registerMiddleware(
+        server,
+      );
     },
   };
 };
@@ -236,15 +296,16 @@ export default defineConfig(
       );
 
     const apiKey =
-      environment.TWELVE_DATA_API_KEY ??
+      environment
+        .TWELVE_DATA_API_KEY ??
       process.env
         .TWELVE_DATA_API_KEY ??
       "";
 
     /*
-     * The local Market Opportunities
-     * endpoint uses the same server-side
-     * environment variable as Vercel.
+     * Local serverless endpoints use
+     * the same environment variable
+     * configured in Vercel.
      */
     if (apiKey) {
       process.env
@@ -263,7 +324,8 @@ export default defineConfig(
         ),
 
         VitePWA({
-          registerType: "prompt",
+          registerType:
+            "prompt",
 
           includeAssets: [
             "jis-logo.svg",
@@ -273,7 +335,8 @@ export default defineConfig(
           manifest: {
             name: "JIS",
 
-            short_name: "JIS",
+            short_name:
+              "JIS",
 
             description:
               "Jake Investment System",
@@ -284,26 +347,46 @@ export default defineConfig(
             background_color:
               "#f1f5f9",
 
-            display: "standalone",
+            display:
+              "standalone",
 
             start_url: "/",
 
             icons: [
               {
-                src: "/pwa-192x192.png",
-                sizes: "192x192",
-                type: "image/png",
+                src:
+                  "/pwa-192x192.png",
+
+                sizes:
+                  "192x192",
+
+                type:
+                  "image/png",
               },
+
               {
-                src: "/pwa-512x512.png",
-                sizes: "512x512",
-                type: "image/png",
+                src:
+                  "/pwa-512x512.png",
+
+                sizes:
+                  "512x512",
+
+                type:
+                  "image/png",
               },
+
               {
-                src: "/maskable-icon-512x512.png",
-                sizes: "512x512",
-                type: "image/png",
-                purpose: "maskable",
+                src:
+                  "/maskable-icon-512x512.png",
+
+                sizes:
+                  "512x512",
+
+                type:
+                  "image/png",
+
+                purpose:
+                  "maskable",
               },
             ],
           },

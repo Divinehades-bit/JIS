@@ -11,6 +11,7 @@ import Goals from "./pages/Goals";
 import MarketOpportunities from "./pages/MarketOpportunities";
 import Portfolio from "./pages/Portfolio";
 import Settings from "./pages/Settings";
+import TradingLab from "./pages/TradingLab";
 
 function App() {
   return (
@@ -31,6 +32,11 @@ function App() {
           element={
             <MarketOpportunities />
           }
+        />
+
+        <Route
+          path="/trading-lab"
+          element={<TradingLab />}
         />
 
         <Route

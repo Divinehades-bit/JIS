@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FlaskConical,
   LayoutDashboard,
   PieChart,
   Radar,
@@ -26,6 +27,11 @@ const menu = [
     title: "Market Radar",
     icon: Radar,
     path: "/opportunities",
+  },
+  {
+    title: "Trading Lab",
+    icon: FlaskConical,
+    path: "/trading-lab",
   },
   {
     title: "Analytics",

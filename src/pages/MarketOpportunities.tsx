@@ -2,7 +2,10 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  BookmarkCheck,
+  BookmarkPlus,
   Clock3,
+  PlayCircle,
   Radar,
   RefreshCw,
   ShieldAlert,
@@ -21,6 +24,8 @@ import useMarketOpportunityStore, {
   type RankedMarketOpportunity,
 } from "../store/marketOpportunityStore";
 
+import useTradingLabStore from "../store/tradingLabStore";
+
 type SummaryCardProps = {
   title: string;
   value: string;
@@ -35,25 +40,24 @@ type ScoreRowProps = {
   negative?: boolean;
 };
 
+type ActionMessage = {
+  type: "success" | "error";
+  text: string;
+};
+
 const moneyFormatter =
-  new Intl.NumberFormat(
-    "en-US",
-    {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    },
-  );
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const dateTimeFormatter =
-  new Intl.DateTimeFormat(
-    "en-US",
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-    },
-  );
+  new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
 const SummaryCard = ({
   title,
@@ -241,8 +245,16 @@ const getRetryText = (
 
 const OpportunityDetails = ({
   opportunity,
+  isWatchlisted,
+  hasActivePaperTrade,
+  onAddToWatchlist,
+  onStartPaperTrade,
 }: {
   opportunity: RankedMarketOpportunity;
+  isWatchlisted: boolean;
+  hasActivePaperTrade: boolean;
+  onAddToWatchlist: () => void;
+  onStartPaperTrade: () => void;
 }) => {
   const breakdown =
     opportunity.scoreBreakdown;
@@ -250,7 +262,7 @@ const OpportunityDetails = ({
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 p-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-bold text-slate-900">
@@ -297,7 +309,7 @@ const OpportunityDetails = ({
             </p>
           </div>
 
-          <div className="sm:text-right">
+          <div className="lg:text-right">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
               Latest price
             </p>
@@ -318,6 +330,46 @@ const OpportunityDetails = ({
               )}{" "}
               over 20 sessions
             </p>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row lg:justify-end">
+              <button
+                type="button"
+                disabled={
+                  isWatchlisted
+                }
+                onClick={
+                  onAddToWatchlist
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-emerald-100 disabled:bg-emerald-50 disabled:text-emerald-700"
+              >
+                {isWatchlisted ? (
+                  <BookmarkCheck className="h-4 w-4" />
+                ) : (
+                  <BookmarkPlus className="h-4 w-4" />
+                )}
+
+                {isWatchlisted
+                  ? "In watchlist"
+                  : "Add to watchlist"}
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  hasActivePaperTrade
+                }
+                onClick={
+                  onStartPaperTrade
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-violet-100 disabled:text-violet-700"
+              >
+                <PlayCircle className="h-4 w-4" />
+
+                {hasActivePaperTrade
+                  ? "Tracking active"
+                  : "Start Paper Tracking"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -633,12 +685,37 @@ const MarketOpportunities =
           state.clearMarketScan,
       );
 
+    const watchlist =
+      useTradingLabStore(
+        (state) =>
+          state.watchlist,
+      );
+
+    const paperTrades =
+      useTradingLabStore(
+        (state) =>
+          state.paperTrades,
+      );
+
+    const addToWatchlist =
+      useTradingLabStore(
+        (state) =>
+          state.addToWatchlist,
+      );
+
+    const startPaperTrade =
+      useTradingLabStore(
+        (state) =>
+          state.startPaperTrade,
+      );
+
     const [
       selectedSymbol,
       setSelectedSymbol,
-    ] = useState<
-      string | null
-    >(null);
+    ] =
+      useState<string | null>(
+        null,
+      );
 
     const [
       currentTime,
@@ -646,6 +723,14 @@ const MarketOpportunities =
     ] = useState(
       Date.now(),
     );
+
+    const [
+      actionMessage,
+      setActionMessage,
+    ] =
+      useState<ActionMessage | null>(
+        null,
+      );
 
     const topOpportunities =
       useMemo(
@@ -715,6 +800,26 @@ const MarketOpportunities =
       topOpportunities[0] ??
       null;
 
+    const selectedIsWatchlisted =
+      selectedOpportunity
+        ? watchlist.some(
+            (item) =>
+              item.symbol ===
+              selectedOpportunity.symbol,
+          )
+        : false;
+
+    const selectedHasActiveTrade =
+      selectedOpportunity
+        ? paperTrades.some(
+            (trade) =>
+              trade.symbol ===
+                selectedOpportunity.symbol &&
+              trade.status ===
+                "active",
+          )
+        : false;
+
     const topScore =
       topOpportunities[0]
         ?.score ?? 0;
@@ -749,6 +854,50 @@ const MarketOpportunities =
           )
         : "Not scanned yet";
 
+    const handleAddToWatchlist =
+      () => {
+        if (
+          !selectedOpportunity
+        ) {
+          return;
+        }
+
+        const result =
+          addToWatchlist(
+            selectedOpportunity,
+          );
+
+        setActionMessage({
+          type: result.success
+            ? "success"
+            : "error",
+
+          text: result.message,
+        });
+      };
+
+    const handleStartPaperTrade =
+      () => {
+        if (
+          !selectedOpportunity
+        ) {
+          return;
+        }
+
+        const result =
+          startPaperTrade(
+            selectedOpportunity,
+          );
+
+        setActionMessage({
+          type: result.success
+            ? "success"
+            : "error",
+
+          text: result.message,
+        });
+      };
+
     return (
       <div className="space-y-6">
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -765,8 +914,7 @@ const MarketOpportunities =
                   </p>
 
                   <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                    Market
-                    Opportunities
+                    Market Opportunities
                   </h1>
                 </div>
               </div>
@@ -844,6 +992,21 @@ const MarketOpportunities =
             </div>
           </div>
         </section>
+
+        {actionMessage && (
+          <section
+            className={`rounded-2xl border p-4 ${
+              actionMessage.type ===
+              "success"
+                ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                : "border-red-100 bg-red-50 text-red-700"
+            }`}
+          >
+            <p className="text-sm leading-6">
+              {actionMessage.text}
+            </p>
+          </section>
+        )}
 
         {isBusy && (
           <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
@@ -972,15 +1135,6 @@ const MarketOpportunities =
                 selected universe in
                 groups and build your
                 Top 10 ranking.
-              </p>
-
-              <p className="mt-3 text-xs leading-5 text-slate-400">
-                With the current API
-                limit, the complete
-                scan may take several
-                minutes and pause
-                automatically between
-                groups.
               </p>
             </div>
           </section>
@@ -1171,6 +1325,18 @@ const MarketOpportunities =
               <OpportunityDetails
                 opportunity={
                   selectedOpportunity
+                }
+                isWatchlisted={
+                  selectedIsWatchlisted
+                }
+                hasActivePaperTrade={
+                  selectedHasActiveTrade
+                }
+                onAddToWatchlist={
+                  handleAddToWatchlist
+                }
+                onStartPaperTrade={
+                  handleStartPaperTrade
                 }
               />
             )}
