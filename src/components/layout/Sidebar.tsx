@@ -1,12 +1,15 @@
 import {
-  LayoutDashboard,
   Briefcase,
+  LayoutDashboard,
   PieChart,
-  Target,
+  Radar,
   Settings,
+  Target,
 } from "lucide-react";
 
-import { NavLink } from "react-router-dom";
+import {
+  NavLink,
+} from "react-router-dom";
 
 const menu = [
   {
@@ -18,6 +21,11 @@ const menu = [
     title: "Portfolio",
     icon: Briefcase,
     path: "/portfolio",
+  },
+  {
+    title: "Market Radar",
+    icon: Radar,
+    path: "/opportunities",
   },
   {
     title: "Analytics",
@@ -38,32 +46,33 @@ const menu = [
 
 function Sidebar() {
   return (
-    <aside className="w-72 bg-slate-900 text-white flex flex-col">
-
-      <div className="px-8 py-10 border-b border-slate-800">
-
+    <aside className="flex w-72 shrink-0 flex-col bg-slate-900 text-white">
+      <div className="border-b border-slate-800 px-8 py-10">
         <h1 className="text-5xl font-bold">
           JIS
         </h1>
 
-        <p className="text-slate-400 mt-2">
+        <p className="mt-2 text-slate-400">
           Jake Investment System
         </p>
-
       </div>
 
-      <nav className="flex-1 mt-8 px-4">
-
+      <nav className="mt-8 flex-1 px-4">
         {menu.map((item) => {
-          const Icon = item.icon;
+          const Icon =
+            item.icon;
 
           return (
             <NavLink
               key={item.title}
               to={item.path}
-              end={item.path === "/"}
-              className={({ isActive }) =>
-                `flex items-center gap-4 px-5 py-4 rounded-xl mb-2 transition ${
+              end={
+                item.path === "/"
+              }
+              className={({
+                isActive,
+              }) =>
+                `mb-2 flex items-center gap-4 rounded-xl px-5 py-4 transition ${
                   isActive
                     ? "bg-blue-600 text-white"
                     : "text-slate-300 hover:bg-slate-800"
@@ -78,9 +87,7 @@ function Sidebar() {
             </NavLink>
           );
         })}
-
       </nav>
-
     </aside>
   );
 }
